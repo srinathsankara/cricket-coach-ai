@@ -49,8 +49,9 @@ def _unknown(name):
 
 def _stance_width(frames):
     ratios = []
-    first_issue_idx = 0   # stance visible from first frame
-    for fd in frames[:15]:
+    worst_idx = 0
+    worst_deviation = -1.0
+    for i, fd in enumerate(frames[:15]):
         lm = fd['landmarks']
         if lm is None:
             continue
@@ -63,7 +64,13 @@ def _stance_width(frames):
             sw = abs(ls[0] - rs[0])
             fw = abs(la[0] - ra[0])
             if sw > 10:
-                ratios.append(fw / sw)
+                ratio = fw / sw
+                ratios.append(ratio)
+                # Worst frame = furthest from ideal range (0.9–1.4)
+                deviation = max(0.9 - ratio, ratio - 1.4, 0)
+                if deviation > worst_deviation:
+                    worst_deviation = deviation
+                    worst_idx = i
         except Exception:
             continue
 
@@ -75,7 +82,7 @@ def _stance_width(frames):
     if 0.9 <= r <= 1.4:
         return _checkpoint('Stance Width', 'good', '✅',
                            "Great stance! Feet in a perfect shoulder-width position.",
-                           issue_frame_idx=0, good=('left_ankle', 'right_ankle'))
+                           issue_frame_idx=worst_idx, good=('left_ankle', 'right_ankle'))
     if r < 0.9:
         return _checkpoint(
             'Stance Width', 'fix', '❌', "Feet too close together — widen your stance.",
@@ -87,7 +94,7 @@ def _stance_width(frames):
                         "Feel your weight balanced evenly — like you're ready to jump."),
             drill=("DRILL — The Tape Test: Put two strips of tape on the ground shoulder-width apart. "
                    "Practise standing with one foot on each strip. Do 20 shadow-bat swings daily."),
-            issue_frame_idx=0, problem=('left_ankle', 'right_ankle'),
+            issue_frame_idx=worst_idx, problem=('left_ankle', 'right_ankle'),
             canvas_label=f"Feet too NARROW — {int(r*100)}% of shoulder width (needs 90–140%)")
     return _checkpoint(
         'Stance Width', 'improve', '⚠️', "Feet a little too wide — bring them slightly closer.",
@@ -96,18 +103,18 @@ def _stance_width(frames):
         how_to_fix="Bring your feet in slightly — just at or a touch outside shoulder width.",
         drill=("DRILL — Step and Play: Practise taking one big forward step from your stance. "
                "If you feel cramped, your stance is too wide."),
-        issue_frame_idx=0, problem=('left_ankle', 'right_ankle'),
+        issue_frame_idx=worst_idx, problem=('left_ankle', 'right_ankle'),
         canvas_label=f"Feet too WIDE — {int(r*100)}% of shoulder width (needs 90–140%)")
 
 
 def _knee_bend(frames, handedness='right'):
-    # Front leg differs by handedness — that's the key joint to show the arc on
     front_hip   = 'left_hip'   if handedness == 'right' else 'right_hip'
     front_knee  = 'left_knee'  if handedness == 'right' else 'right_knee'
     front_ankle = 'left_ankle' if handedness == 'right' else 'right_ankle'
     angles = []
-    first_issue_idx = 0
-    for fd in frames[:15]:
+    worst_idx = 0
+    worst_deviation = -1.0
+    for i, fd in enumerate(frames[:15]):
         lm = fd['landmarks']
         if lm is None:
             continue
@@ -119,7 +126,13 @@ def _knee_bend(frames, handedness='right'):
             rh = landmark_xy(lm, 'right_hip', w, h)
             rk = landmark_xy(lm, 'right_knee', w, h)
             ra = landmark_xy(lm, 'right_ankle', w, h)
-            angles.append((calculate_angle(lh, lk, la) + calculate_angle(rh, rk, ra)) / 2)
+            angle = (calculate_angle(lh, lk, la) + calculate_angle(rh, rk, ra)) / 2
+            angles.append(angle)
+            # Worst = furthest from ideal (140–165)
+            deviation = max(140 - angle, angle - 165, 0)
+            if deviation > worst_deviation:
+                worst_deviation = deviation
+                worst_idx = i
         except Exception:
             continue
 
@@ -131,7 +144,7 @@ def _knee_bend(frames, handedness='right'):
     if 140 <= a <= 165:
         return _checkpoint('Knee Bend', 'good', '✅',
                            "Perfect knee bend — relaxed, athletic and ready to move!",
-                           issue_frame_idx=0, good=('left_knee', 'right_knee'))
+                           issue_frame_idx=worst_idx, good=('left_knee', 'right_knee'))
     if a > 165:
         return _checkpoint(
             'Knee Bend', 'fix', '❌', "Knees too straight — bend them more.",
@@ -140,7 +153,7 @@ def _knee_bend(frames, handedness='right'):
             how_to_fix="Imagine sitting on a tall stool — let the knees flex gently. Weight on balls of feet.",
             drill=("DRILL — The Bounce Test: Have someone push your shoulder gently. If you wobble a lot, "
                    "your knees are too straight. Bend until a push barely moves you."),
-            issue_frame_idx=0, problem=('left_knee', 'right_knee'),
+            issue_frame_idx=worst_idx, problem=('left_knee', 'right_knee'),
             angle_joints=(front_hip, front_knee, front_ankle),
             canvas_label=f"Knee: {int(a)}° — too STRAIGHT (needs 150–165°)")
     return _checkpoint(
@@ -149,7 +162,7 @@ def _knee_bend(frames, handedness='right'):
         why_matters="Too much knee bend restricts hip rotation and shortens your reach.",
         how_to_fix="Rise up slightly. Think 'tall but relaxed'. Spine fairly upright, knees just gently bent.",
         drill="DRILL — Mirror Check: Stand in front of a mirror. Adjust until your knee bend looks natural.",
-        issue_frame_idx=0, problem=('left_knee', 'right_knee'),
+        issue_frame_idx=worst_idx, problem=('left_knee', 'right_knee'),
         angle_joints=(front_hip, front_knee, front_ankle),
         canvas_label=f"Knee: {int(a)}° — too BENT (needs 150–165°)")
 

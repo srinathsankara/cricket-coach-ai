@@ -114,6 +114,25 @@
           <span id="nw-label">–</span>
         </div>
 
+        <!-- Floating zoom-out button — appears top-right when zoomed in -->
+        <div id="zoom-out-overlay"
+          class="hidden absolute top-3 right-3 flex flex-col gap-2 items-end">
+          <button onclick="resetZoom()"
+            class="flex items-center gap-1 bg-black bg-opacity-75 hover:bg-opacity-95
+                   text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg
+                   border border-gray-500 transition-all"
+            style="backdrop-filter:blur(4px)">
+            🔍− Zoom Out
+          </button>
+          <button onclick="resetViewer()"
+            class="flex items-center gap-1 bg-black bg-opacity-75 hover:bg-opacity-95
+                   text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg
+                   border border-gray-500 transition-all"
+            style="backdrop-filter:blur(4px)">
+            ↩ Reset All
+          </button>
+        </div>
+
         <!-- Floating callout annotation (slides in from left) -->
         <div id="callout-box"
           class="hidden absolute left-3 bottom-16 max-w-xs bg-red-600 text-white
@@ -163,8 +182,9 @@
       <!-- Colour legend -->
       <div class="bg-gray-850 border-t border-gray-700 px-4 py-2 flex flex-wrap gap-4 text-xs text-gray-400">
         <span>── Grey lines = AI skeleton</span>
-        <span>🔴 Red dot = problem joint (appears only at the issue moment)</span>
-        <span class="ml-auto italic">Click ▶ Watch This on a card below</span>
+        <span>🔴 Red dot = tracks the problem joint throughout the video</span>
+        <span>🟠 Orange trail = joint path during slow-mo</span>
+        <span class="ml-auto italic">Click Watch This on a card below to start</span>
       </div>
     </div>
   </section>

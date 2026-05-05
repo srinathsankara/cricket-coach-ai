@@ -1,17 +1,14 @@
 /* =========================================================
-   Cricket Coach AI — Smart Coaching Viewer  (v4)
-   results.js
+   Cricket Coach AI — Smart Coaching Viewer  (v5)
 
    UX flow when "Watch This" is clicked:
-   1. Video plays from ~2.5 s before the issue (context run-up).
-   2. At the exact issue moment the video AUTO-PAUSES.
-   3. Canvas overlay shows:
-        • Angle arc with measured value at the problem joint
-        • Red label badge with coaching measurement
-        • Large focus circle on the problem joint
-   4. Recommendation callout appears below with the fix advice.
-   5. "▶ Continue" button lets the user resume at 0.25× slow-mo.
-   6. Fading trail + live arc follow the joint during slow-mo.
+   1. A large red dot IMMEDIATELY starts tracking the problem joint
+      across the whole video so the user always knows what to watch.
+   2. Video plays from ~2.5 s before the issue (context run-up).
+   3. At the exact issue moment the video AUTO-PAUSES.
+   4. Canvas overlay shows angle arc + big label badge + focus ring.
+   5. "▶ Continue in slow-mo" button resumes at 0.25×.
+   6. Fading orange trail follows the joint through the motion.
    ========================================================= */
 
 const video  = document.getElementById('coaching-video');
@@ -19,22 +16,22 @@ const canvas = document.getElementById('annotation-canvas');
 const ctx    = canvas.getContext('2d');
 
 // ── State ─────────────────────────────────────────────────────────────────
-let currentSpeed       = 1;
-let loopEnabled        = true;
-let zoomLevel          = 1;
-let zoomOriginX        = 50;
-let zoomOriginY        = 50;
-let animHandle         = null;
-let activeIssueIdx     = -1;
-let activeJointPositions = {};   // live per-frame joint positions
-let trailPositions     = [];     // [{x,y}] fading movement trail
-const TRAIL_MAX        = 18;     // how many trail positions to keep
-let autoPaused         = false;  // true once we've auto-paused at the issue moment
+let currentSpeed         = 1;
+let loopEnabled          = true;
+let zoomLevel            = 1;
+let zoomOriginX          = 50;
+let zoomOriginY          = 50;
+let animHandle           = null;
+let activeIssueIdx       = -1;
+let activeJointPositions = {};
+let trailPositions       = [];
+const TRAIL_MAX          = 18;
+let autoPaused           = false;
 
-// Pulse state for the focus ring while playing
-let pulse = { r: 10, growing: true };
+// Pulse state for the tracking dot
+let pulse = { r: 18, growing: true };
 
-// ── Joint zones — fallback positions and human-readable labels ─────────────
+// ── Joint zones — fallback y-positions and labels ─────────────────────────
 const JOINT_ZONE = {
   nose:           { y: 0.10, label: 'Head' },
   left_shoulder:  { y: 0.25, label: 'Shoulder' },
@@ -63,7 +60,6 @@ video.addEventListener('ended', () => {
 });
 
 video.addEventListener('play', () => {
-  // Hide the play button once video actually starts
   document.getElementById('play-from-here').classList.add('hidden');
 });
 
@@ -75,10 +71,11 @@ function resizeCanvas() {
   canvas.height = rect.height || video.offsetHeight;
 }
 
-// ── Frame sync: update live joint positions from FRAME_LANDMARKS ──────────
+// ── Frame sync: update live joint positions + auto-pause logic ────────────
 video.addEventListener('timeupdate', () => {
   if (activeIssueIdx < 0 || !FRAME_LANDMARKS || !FRAME_LANDMARKS.length) return;
 
+  // Find nearest landmark frame
   const t = video.currentTime;
   let best = FRAME_LANDMARKS[0], bestDiff = Math.abs(best.t - t);
   for (let i = 1; i < FRAME_LANDMARKS.length; i++) {
@@ -87,91 +84,84 @@ video.addEventListener('timeupdate', () => {
   }
   activeJointPositions = best ? (best.j || {}) : {};
 
-  // ── Auto-pause at issue moment (first time only per watchIssue call) ──────
+  // ── Auto-pause at issue moment ────────────────────────────────────────
+  // Guarantee the video plays for at least 1 s before pausing so the user
+  // always sees action. If issue_start_sec is 0 (defaulted), we wait 1 s.
   if (!autoPaused && !video.paused) {
-    const issue    = TOP_ISSUES[activeIssueIdx];
-    const issueSec = issue?.issue_start_sec ?? 0;
+    const issue      = TOP_ISSUES[activeIssueIdx];
+    const rawSec     = issue?.issue_start_sec ?? 0;
+    const issueSec   = Math.max(rawSec, 1.0);   // never pause before 1 s
     if (t >= issueSec) {
       autoPaused = true;
       video.pause();
 
-      // Update the tip strip with the issue name
       const tipEl = document.getElementById('continue-tip');
-      if (tipEl) tipEl.textContent = `⏸ ${issue.name} — see overlay & tip below`;
+      if (tipEl) tipEl.textContent = `⏸ ${issue.name} — this is the exact moment it goes wrong`;
 
-      // Show the "▶ Continue" button overlay
       document.getElementById('play-from-here').classList.remove('hidden');
-
-      // Show coaching recommendation prominently below the video
       showCallout(issue.name, issue.how_to_fix || issue.message);
     }
   }
 
-  // Accumulate trail for primary problem joint while playing
+  // Accumulate trail only while playing and past issue start
   if (!video.paused) {
-    const issue = TOP_ISSUES[activeIssueIdx];
-    const jName = issue?.problem_joints?.[0];
-    if (jName && activeJointPositions[jName]) {
-      const cw = canvas.width || video.offsetWidth;
-      const ch = canvas.height || video.offsetHeight;
-      trailPositions.push({
-        x: activeJointPositions[jName][0] * cw,
-        y: activeJointPositions[jName][1] * ch,
-      });
-      if (trailPositions.length > TRAIL_MAX) trailPositions.shift();
+    const issue    = TOP_ISSUES[activeIssueIdx];
+    const issueSec = issue?.issue_start_sec ?? 0;
+    if (t >= issueSec) {
+      const jName = issue?.problem_joints?.[0];
+      if (jName && activeJointPositions[jName]) {
+        const cw = canvas.width || video.offsetWidth;
+        const ch = canvas.height || video.offsetHeight;
+        trailPositions.push({
+          x: activeJointPositions[jName][0] * cw,
+          y: activeJointPositions[jName][1] * ch,
+        });
+        if (trailPositions.length > TRAIL_MAX) trailPositions.shift();
+      }
     }
   }
 });
 
-// ── PUBLIC: called by each "Watch This" button ────────────────────────────
+// ── PUBLIC: called by "Watch This" buttons ────────────────────────────────
 function watchIssue(idx) {
   const issue = TOP_ISSUES[idx];
   if (!issue) return;
 
   activeIssueIdx = idx;
-  autoPaused     = false;   // reset so we auto-pause again at issue moment
+  autoPaused     = false;
   trailPositions = [];
-  pulse = { r: 10, growing: true };
+  pulse          = { r: 18, growing: true };
 
-  // Highlight the correct card button
   document.querySelectorAll('.watch-btn').forEach((b, i) => {
     b.classList.toggle('watch-btn-active', i === idx);
   });
 
-  // Zoom to primary problem joint
   applyZoomToJoint(issue.problem_joints?.[0] || null);
 
-  // Hide Continue button until auto-pause fires
   document.getElementById('play-from-here').classList.add('hidden');
-
-  // Hide callout — it will reappear on auto-pause
   hideCallout();
 
-  // "Now Watching" badge
   document.getElementById('now-watching').classList.remove('hidden');
   document.getElementById('nw-label').textContent = issue.name;
 
-  // Seek to a couple of seconds BEFORE the issue for context, then play
-  const issueSec  = issue.issue_start_sec ?? 0;
-  const runUpSec  = Math.max(0, issueSec - 2.5);
-  video.currentTime = runUpSec;
-  setSpeed(1);      // normal speed for the run-up
+  // Always start from the very beginning so the user sees the full action.
+  // The red dot will track the joint from frame 0, then the video
+  // auto-pauses the moment the issue frame is reached.
+  video.currentTime = 0;
+  setSpeed(1);
   video.play();
 
-  // Start rAF draw loop
   stopPulse();
   drawLoop();
 
   document.getElementById('viewer-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── Called by "▶ Continue" button (after auto-pause at issue moment) ──────
+// ── "▶ Continue in slow-mo" button handler ────────────────────────────────
 function playFromIssue() {
   trailPositions = [];
-  setSpeed(0.25);   // slow-mo so user can clearly see the issue
+  setSpeed(0.25);
   video.play();
-  // play event handler hides the button
-  // autoPaused stays true so we don't re-pause at the same spot
 }
 
 // ── Main rAF draw loop ────────────────────────────────────────────────────
@@ -187,258 +177,252 @@ function drawLoop() {
   if (!issue) return;
 
   if (video.paused) {
-    // ── FROZEN: show detailed static overlay at issue moment ─────────────
+    // Frozen frame: full overlay with arc + big label + focus ring
     _drawFrozen(issue, cw, ch);
   } else {
-    // ── PLAYING: show trail + live arc (after issue starts) ─────────────
+    // Always draw the tracking dot so user knows which joint to watch
+    _drawTrackingDot(issue, cw, ch);
+
+    // After the issue starts: add trail + arc + label
     const startSec = issue.issue_start_sec ?? 0;
     if (video.currentTime >= startSec) {
-      _drawPlaying(issue, cw, ch);
+      _drawTrail(cw, ch);
+
+      if (issue.angle_joints && issue.angle_joints.length === 3) {
+        const p1 = _getJointPx(issue.angle_joints[0], activeJointPositions, cw, ch);
+        const vp = _getJointPx(issue.angle_joints[1], activeJointPositions, cw, ch);
+        const p2 = _getJointPx(issue.angle_joints[2], activeJointPositions, cw, ch);
+        if (p1 && vp && p2) _drawAngleArc(p1, vp, p2, Math.min(cw, ch) * 0.07);
+      }
+
+      if (issue.canvas_label) _drawCanvasLabel(issue.canvas_label, cw, ch, 0.85);
     }
   }
 }
 
-// ── FROZEN overlay ────────────────────────────────────────────────────────
-// Shown when video is paused at the issue moment.
-// Draws: angle arc + value, canvas label, large focus circle.
+// ── Tracking dot — shown throughout the whole video ───────────────────────
+// Big, pulsing red dot that always sits on the problem joint so the user
+// knows exactly what to watch even during the run-up.
+function _drawTrackingDot(issue, cw, ch) {
+  const jName = issue?.problem_joints?.[0];
+  if (!jName) return;
+  const pos = _getJointPx(jName, activeJointPositions, cw, ch);
+  if (!pos) return;
 
+  // Pulsing outer glow
+  pulse.r += pulse.growing ? 0.5 : -0.5;
+  if (pulse.r > 32) pulse.growing = false;
+  if (pulse.r < 18) pulse.growing = true;
+
+  // Glow halo
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, pulse.r + 10, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255, 30, 30, 0.20)';
+  ctx.lineWidth   = 14;
+  ctx.stroke();
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, pulse.r, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255, 30, 30, 0.85)';
+  ctx.lineWidth   = 3.5;
+  ctx.stroke();
+
+  // Solid centre dot
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 20, 20, 0.97)';
+  ctx.fill();
+
+  // White inner spot for contrast
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+
+  // Label pill
+  const label = JOINT_ZONE[jName]?.label || jName.replace(/_/g, ' ');
+  _drawLabelPill(pos.x, pos.y, label, cw, ch);
+}
+
+// ── FROZEN overlay — shown when video is paused at issue moment ───────────
 function _drawFrozen(issue, cw, ch) {
-  // Get joint positions at the issue frame
-  const positions = _getFramePositionsAt(issue.issue_start_sec ?? 0);
+  const positions    = _getFramePositionsAt(issue.issue_start_sec ?? 0);
   const primaryJoint = issue.problem_joints?.[0];
   if (!primaryJoint) return;
 
   const pos = _getJointPx(primaryJoint, positions, cw, ch);
 
-  // 1. Angle arc (if 3 joints are defined)
+  // 1. Angle arc
   if (issue.angle_joints && issue.angle_joints.length === 3) {
     const p1 = _getJointPx(issue.angle_joints[0], positions, cw, ch);
     const vp = _getJointPx(issue.angle_joints[1], positions, cw, ch);
     const p2 = _getJointPx(issue.angle_joints[2], positions, cw, ch);
-    if (p1 && vp && p2) {
-      _drawAngleArc(p1, vp, p2, Math.min(cw, ch) * 0.08);
-    }
+    if (p1 && vp && p2) _drawAngleArc(p1, vp, p2, Math.min(cw, ch) * 0.10);
   }
 
-  // 2. Canvas label badge — "Knee: 142° — too BENT (needs 150–165°)"
-  if (issue.canvas_label) {
-    _drawCanvasLabel(issue.canvas_label, cw, ch);
-  }
+  // 2. Big label badge at top
+  if (issue.canvas_label) _drawCanvasLabel(issue.canvas_label, cw, ch, 1.0);
 
-  // 3. Large focus circle at primary joint
+  // 3. Large focus circle
   if (pos) {
-    // Outer glow ring
+    // Wide glow halo
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 22, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 50, 50, 0.35)';
-    ctx.lineWidth = 12;
+    ctx.arc(pos.x, pos.y, 46, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 30, 30, 0.20)';
+    ctx.lineWidth   = 20;
     ctx.stroke();
 
-    // Solid ring
+    // Outer ring
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 30, 30, 0.92)';
-    ctx.lineWidth = 3;
+    ctx.arc(pos.x, pos.y, 38, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 30, 30, 0.90)';
+    ctx.lineWidth   = 4;
+    ctx.stroke();
+
+    // Inner ring
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 28, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 80, 80, 0.60)';
+    ctx.lineWidth   = 2;
     ctx.stroke();
 
     // Centre dot
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 28, 28, 0.97)';
+    ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 20, 20, 0.97)';
     ctx.fill();
 
-    // Joint label pill to the right
+    // White inner spot
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
+
+    // Label pill
     const label = JOINT_ZONE[primaryJoint]?.label || primaryJoint.replace(/_/g, ' ');
     _drawLabelPill(pos.x, pos.y, label, cw, ch);
   }
 }
 
-// ── PLAYING overlay ───────────────────────────────────────────────────────
-// Shown while the video is playing after the issue moment.
-// Draws: fading trail, pulsing dot, live angle arc, label.
-
-function _drawPlaying(issue, cw, ch) {
-  const positions    = activeJointPositions;
-  const primaryJoint = issue.problem_joints?.[0];
-
-  // 1. Fading trail
-  _drawTrail(cw, ch);
-
-  // 2. Live angle arc
-  if (issue.angle_joints && issue.angle_joints.length === 3) {
-    const p1 = _getJointPx(issue.angle_joints[0], positions, cw, ch);
-    const vp = _getJointPx(issue.angle_joints[1], positions, cw, ch);
-    const p2 = _getJointPx(issue.angle_joints[2], positions, cw, ch);
-    if (p1 && vp && p2) {
-      _drawAngleArc(p1, vp, p2, Math.min(cw, ch) * 0.07);
-    }
-  }
-
-  // 3. Pulsing dot at current position
-  if (primaryJoint) {
-    const pos = _getJointPx(primaryJoint, positions, cw, ch);
-    if (pos) {
-      pulse.r += pulse.growing ? 0.45 : -0.45;
-      if (pulse.r > 20) pulse.growing = false;
-      if (pulse.r < 7)  pulse.growing = true;
-
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, pulse.r, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 50, 50, 0.7)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 28, 28, 0.95)';
-      ctx.fill();
-    }
-  }
-
-  // 4. Persistent canvas label (smaller, semi-transparent while playing)
-  if (issue.canvas_label) {
-    _drawCanvasLabel(issue.canvas_label, cw, ch, 0.78);
-  }
-}
-
-// ── Angle arc drawing ─────────────────────────────────────────────────────
-// Draws the arc at vertex (vp) between arms p1 and p2,
-// shows the computed angle value near the arc midpoint.
-
+// ── Angle arc ─────────────────────────────────────────────────────────────
 function _drawAngleArc(p1, vp, p2, arcRadius) {
   const a1  = Math.atan2(p1.y - vp.y, p1.x - vp.x);
   const a2  = Math.atan2(p2.y - vp.y, p2.x - vp.x);
   const r   = arcRadius;
+  const arm = r * 1.6;
 
-  // Short arm lines
-  const arm  = r * 1.6;
-  ctx.strokeStyle = 'rgba(255, 160, 0, 0.92)';
-  ctx.lineWidth   = 2.5;
+  ctx.strokeStyle = 'rgba(255, 160, 0, 0.95)';
+  ctx.lineWidth   = 3;
+  ctx.beginPath(); ctx.moveTo(vp.x, vp.y);
+  ctx.lineTo(vp.x + Math.cos(a1) * arm, vp.y + Math.sin(a1) * arm); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(vp.x, vp.y);
+  ctx.lineTo(vp.x + Math.cos(a2) * arm, vp.y + Math.sin(a2) * arm); ctx.stroke();
 
-  ctx.beginPath();
-  ctx.moveTo(vp.x, vp.y);
-  ctx.lineTo(vp.x + Math.cos(a1) * arm, vp.y + Math.sin(a1) * arm);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(vp.x, vp.y);
-  ctx.lineTo(vp.x + Math.cos(a2) * arm, vp.y + Math.sin(a2) * arm);
-  ctx.stroke();
-
-  // Arc — always draw the smaller of the two possible arcs
   let diff = a2 - a1;
   while (diff < -Math.PI) diff += 2 * Math.PI;
   while (diff >  Math.PI) diff -= 2 * Math.PI;
 
   ctx.beginPath();
   ctx.arc(vp.x, vp.y, r, a1, a1 + diff);
-  ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
-  ctx.lineWidth   = 3;
+  ctx.strokeStyle = 'rgba(255, 210, 0, 0.95)';
+  ctx.lineWidth   = 3.5;
   ctx.stroke();
 
-  // Angle value badge near arc midpoint
-  const midA   = a1 + diff / 2;
-  const badgeX = vp.x + Math.cos(midA) * (r + 20);
-  const badgeY = vp.y + Math.sin(midA) * (r + 20);
+  // Degree badge near arc midpoint
+  const midA     = a1 + diff / 2;
+  const badgeX   = vp.x + Math.cos(midA) * (r + 28);
+  const badgeY   = vp.y + Math.sin(midA) * (r + 28);
   const angleDeg = Math.round(_computeAngle(p1, vp, p2));
 
-  ctx.font      = 'bold 15px system-ui, sans-serif';
-  const tw      = ctx.measureText(angleDeg + '°').width;
-  const bw = tw + 14, bh = 24;
-  const bx = Math.max(2, Math.min(canvas.width - bw - 2, badgeX - bw / 2));
-  const by = Math.max(2, Math.min(canvas.height - bh - 2, badgeY - bh / 2));
+  ctx.font = 'bold 18px system-ui, sans-serif';
+  const tw  = ctx.measureText(angleDeg + '°').width;
+  const bw  = tw + 18, bh = 30;
+  const bx  = Math.max(2, Math.min(canvas.width  - bw - 2, badgeX - bw / 2));
+  const by  = Math.max(2, Math.min(canvas.height - bh - 2, badgeY - bh / 2));
 
-  ctx.fillStyle = 'rgba(200, 100, 0, 0.92)';
-  _roundRect(ctx, bx, by, bw, bh, 6);
-  ctx.fill();
-
+  ctx.fillStyle = 'rgba(180, 80, 0, 0.95)';
+  _roundRect(ctx, bx, by, bw, bh, 7); ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.fillText(angleDeg + '°', bx + 7, by + bh * 0.72);
+  ctx.fillText(angleDeg + '°', bx + 9, by + bh * 0.73);
 }
 
-// ── Canvas label badge ────────────────────────────────────────────────────
-// Full-width banner at the top of the video: e.g. "Knee: 142° — too BENT (needs 150–165°)"
-
+// ── Canvas label badge — big, readable banner at top of video ─────────────
 function _drawCanvasLabel(text, cw, ch, alpha = 1.0) {
-  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.font = 'bold 20px system-ui, sans-serif';   // was 13px — now much bigger
   const tw    = ctx.measureText(text).width;
-  const padX  = 18, padY = 7;
-  const pillW = Math.min(tw + padX * 2, cw - 12);
-  const pillH = 30;
+  const padX  = 22;
+  const pillW = Math.min(tw + padX * 2, cw - 16);
+  const pillH = 44;                                // was 30
   const pillX = (cw - pillW) / 2;
-  const pillY = 12;
+  const pillY = 14;
 
-  // Dark shadow for legibility
-  ctx.fillStyle = `rgba(0,0,0,${0.55 * alpha})`;
-  _roundRect(ctx, pillX - 3, pillY - 3, pillW + 6, pillH + 6, 11);
+  // Dark shadow
+  ctx.fillStyle = `rgba(0,0,0,${0.6 * alpha})`;
+  _roundRect(ctx, pillX - 4, pillY - 4, pillW + 8, pillH + 8, 13);
   ctx.fill();
 
   // Red pill
-  ctx.fillStyle = `rgba(200, 28, 28, ${0.93 * alpha})`;
-  _roundRect(ctx, pillX, pillY, pillW, pillH, 8);
+  ctx.fillStyle = `rgba(210, 20, 20, ${0.95 * alpha})`;
+  _roundRect(ctx, pillX, pillY, pillW, pillH, 10);
   ctx.fill();
 
-  // Text (truncate if needed)
+  // Text
   ctx.fillStyle = `rgba(255,255,255,${alpha})`;
   ctx.save();
   ctx.beginPath();
   ctx.rect(pillX + 6, pillY, pillW - 12, pillH);
   ctx.clip();
-  ctx.fillText(text, pillX + padX, pillY + pillH * 0.68);
+  ctx.fillText(text, pillX + padX, pillY + pillH * 0.70);
   ctx.restore();
 }
 
 // ── Label pill beside joint ───────────────────────────────────────────────
 function _drawLabelPill(dotX, dotY, label, cw, ch) {
-  const text  = '📍 ' + label.toUpperCase();
-  ctx.font    = 'bold 11px system-ui, sans-serif';
-  const tw    = ctx.measureText(text).width;
-  const pw = tw + 14, ph = 20;
-  const px = Math.min(dotX + 28, cw - pw - 4);
+  const text = '● ' + label.toUpperCase();
+  ctx.font   = 'bold 13px system-ui, sans-serif';
+  const tw   = ctx.measureText(text).width;
+  const pw = tw + 16, ph = 24;
+  const px = Math.min(dotX + 46, cw - pw - 4);
   const py = dotY - ph / 2;
 
   ctx.beginPath();
-  ctx.moveTo(dotX + 8, dotY);
+  ctx.moveTo(dotX + 14, dotY);
   ctx.lineTo(px, py + ph * 0.6);
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  ctx.fillStyle = 'rgba(200, 28, 28, 0.93)';
-  _roundRect(ctx, px, py, pw, ph, 5);
-  ctx.fill();
-
+  ctx.fillStyle = 'rgba(180, 20, 20, 0.95)';
+  _roundRect(ctx, px, py, pw, ph, 6); ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.fillText(text, px + 7, py + ph * 0.72);
+  ctx.fillText(text, px + 8, py + ph * 0.72);
 }
 
-// ── Fading trail ──────────────────────────────────────────────────────────
+// ── Fading movement trail ─────────────────────────────────────────────────
 function _drawTrail(cw, ch) {
   if (trailPositions.length < 2) return;
   const n = trailPositions.length;
 
-  // Connecting line (faded)
   ctx.beginPath();
   ctx.moveTo(trailPositions[0].x, trailPositions[0].y);
   for (let i = 1; i < n; i++) ctx.lineTo(trailPositions[i].x, trailPositions[i].y);
-  ctx.strokeStyle = 'rgba(255, 140, 0, 0.30)';
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin  = 'round';
+  ctx.strokeStyle = 'rgba(255, 140, 0, 0.35)';
+  ctx.lineWidth   = 3;
+  ctx.lineJoin    = 'round';
   ctx.stroke();
 
-  // Fading dots
   for (let i = 0; i < n; i++) {
-    const t   = (i + 1) / n;            // 0→1, newest = 1
-    const p   = trailPositions[i];
+    const t = (i + 1) / n;
+    const p = trailPositions[i];
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 3.5 * t, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 100, 0, ${t * 0.65})`;
+    ctx.arc(p.x, p.y, 5 * t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 100, 0, ${t * 0.7})`;
     ctx.fill();
   }
 }
 
 // ── Joint position helpers ────────────────────────────────────────────────
-
 function _getFramePositionsAt(targetSec) {
   if (!FRAME_LANDMARKS || !FRAME_LANDMARKS.length) return {};
   let best = FRAME_LANDMARKS[0], bestDiff = Math.abs(best.t - targetSec);
@@ -450,19 +434,16 @@ function _getFramePositionsAt(targetSec) {
 }
 
 function _getJointPx(name, positions, cw, ch) {
-  if (positions && positions[name]) {
+  if (positions && positions[name])
     return { x: positions[name][0] * cw, y: positions[name][1] * ch };
-  }
-  if (LANDMARK_POSITIONS[name]) {
+  if (LANDMARK_POSITIONS[name])
     return { x: LANDMARK_POSITIONS[name].x * cw, y: LANDMARK_POSITIONS[name].y * ch };
-  }
-  if (JOINT_ZONE[name]) {
+  if (JOINT_ZONE[name])
     return { x: cw * 0.5, y: JOINT_ZONE[name].y * ch };
-  }
   return null;
 }
 
-// ── Stop animation and clear canvas ──────────────────────────────────────
+// ── Stop animation ────────────────────────────────────────────────────────
 function stopPulse() {
   if (animHandle) { cancelAnimationFrame(animHandle); animHandle = null; }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -488,6 +469,9 @@ function applyZoomToJoint(jointName) {
 function applyTransform() {
   video.style.transformOrigin = `${zoomOriginX}% ${zoomOriginY}%`;
   video.style.transform       = `scale(${zoomLevel})`;
+  // Show/hide floating zoom-out button
+  const zBtn = document.getElementById('zoom-out-overlay');
+  if (zBtn) zBtn.classList.toggle('hidden', zoomLevel <= 1);
   setTimeout(resizeCanvas, 480);
 }
 
@@ -496,12 +480,19 @@ function zoomStep(dir) {
   applyTransform();
 }
 
-function resetViewer() {
-  stopPulse();
-  autoPaused = false;
+function resetZoom() {
   zoomLevel = 1; zoomOriginX = 50; zoomOriginY = 50;
   video.style.transform       = 'scale(1)';
   video.style.transformOrigin = '50% 50%';
+  const zBtn = document.getElementById('zoom-out-overlay');
+  if (zBtn) zBtn.classList.add('hidden');
+  setTimeout(resizeCanvas, 480);
+}
+
+function resetViewer() {
+  stopPulse();
+  autoPaused = false;
+  resetZoom();
   setSpeed(1);
   document.getElementById('now-watching').classList.add('hidden');
   document.getElementById('play-from-here').classList.add('hidden');
@@ -555,8 +546,7 @@ function _computeAngle(p1, vp, p2) {
 
 function _roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
   ctx.quadraticCurveTo(x + w, y, x + w, y + r);
   ctx.lineTo(x + w, y + h - r);
   ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
@@ -567,5 +557,4 @@ function _roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Alias kept for any external callers
 function roundRect(c, x, y, w, h, r) { _roundRect(c, x, y, w, h, r); }
