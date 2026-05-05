@@ -4,15 +4,21 @@
 
 ---
 
-## 📸 What It Looks Like
+## 📸 Screenshots
 
-```
-Upload video → AI analyses every frame → Top 3 issues surfaced
-→ Video auto-pauses at the exact wrong moment
-→ Angle arc drawn on screen: "Knee: 142° — too BENT (needs 150–165°)"
-→ Click Continue → slow-mo trail shows the joint moving incorrectly
-→ Coaching tip + drill appears below
-```
+### Home — Upload Page
+![Upload Page](docs/screenshots/02_upload_form_crop.png)
+
+### Step 1: Record Tips + Step 2: Upload Form
+The app walks you through exactly how to film your video for best results, then lets you configure mode, handedness and age group before uploading.
+
+![Upload Form](docs/screenshots/01_upload_page.png)
+
+> **Results page** — after uploading a video, the AI analyses every frame and surfaces the Top 3 issues with:
+> - 📐 Angle arc drawn on the exact frame (e.g. `"Front knee: 138° — COLLAPSING"`)
+> - ⏸ Auto-pause at the issue moment with a **▶ Continue in slow-mo** button
+> - 🟠 Fading orange trail tracing the problem joint through the motion
+> - 📋 Coaching cards with what's wrong, why it matters, how to fix it, and a drill
 
 ---
 
@@ -197,6 +203,8 @@ CricketApp/
 │   └── js/
 │       ├── app.js            # Upload flow, progress bar
 │       └── results.js        # Video viewer, canvas overlays, angle arcs, trail
+├── docs/
+│   └── screenshots/          # App screenshots for README
 ├── uploads/                  # Temporary uploaded videos (git-ignored)
 └── results/                  # Generated annotated videos (git-ignored)
 ```
