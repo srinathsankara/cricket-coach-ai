@@ -52,7 +52,7 @@ const JOINT_ZONE = {
 video.addEventListener('loadedmetadata', () => {
   resizeCanvas();
   video.loop = loopEnabled;
-  setSpeed(1);
+  setSpeed(0.25);   // slow-mo by default
 });
 
 video.addEventListener('ended', () => {
@@ -148,7 +148,7 @@ function watchIssue(idx) {
   // The red dot will track the joint from frame 0, then the video
   // auto-pauses the moment the issue frame is reached.
   video.currentTime = 0;
-  setSpeed(1);
+  setSpeed(0.25);   // slow-mo so every detail is visible
   video.play();
 
   stopPulse();
@@ -493,7 +493,7 @@ function resetViewer() {
   stopPulse();
   autoPaused = false;
   resetZoom();
-  setSpeed(1);
+  setSpeed(0.25);   // always return to slow-mo on reset
   document.getElementById('now-watching').classList.add('hidden');
   document.getElementById('play-from-here').classList.add('hidden');
   hideCallout();
