@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket Coach AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: {
+        cg:  '#1a5c2e',
+        cgl: '#2d8a50',
+        cp:  '#c8a96e',
+        cc:  '#fdf8f0',
+      }}}
+    }
+  </script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-amber-50 min-h-screen font-sans">
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <header class="bg-green-900 text-white py-4 px-6 shadow-lg">
+    <div class="max-w-4xl mx-auto flex items-center gap-3">
+      <span class="text-4xl">🏏</span>
+      <div>
+        <h1 class="text-2xl font-extrabold tracking-tight">Cricket Coach AI</h1>
+        <p class="text-green-300 text-sm">Upload a video — get expert batting &amp; bowling feedback instantly</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+
+    <!-- ── Recording Guide ────────────────────────────────────────── -->
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold text-green-900 mb-1">📱 Step 1 — Record Your Video</h2>
+      <p class="text-gray-500 text-sm mb-5">Follow these tips before you press record. Better video = better feedback!</p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <div class="tip-card bg-green-50 border border-green-200">
+          <div class="text-3xl mb-2">📐</div>
+          <h3 class="font-bold text-green-900 mb-1">Film from the SIDE</h3>
+          <p class="text-sm text-green-800">Stand at 90° to the player — a perfect side view, not front or back.</p>
+          <div class="mt-3 flex gap-2 text-xs flex-wrap">
+            <span class="badge bg-green-200 text-green-900">✅ Side view</span>
+            <span class="badge bg-red-100 text-red-700">❌ Front view</span>
+          </div>
+        </div>
+
+        <div class="tip-card bg-blue-50 border border-blue-200">
+          <div class="text-3xl mb-2">📏</div>
+          <h3 class="font-bold text-blue-900 mb-1">Stand 4–6 Metres Away</h3>
+          <p class="text-sm text-blue-800">Far enough to see the whole body — head to feet — with a bit of space around them.</p>
+          <div class="mt-3 text-xs">
+            <span class="badge bg-blue-100 text-blue-900">Roughly 5 big steps away</span>
+          </div>
+        </div>
+
+        <div class="tip-card bg-yellow-50 border border-yellow-200">
+          <div class="text-3xl mb-2">📸</div>
+          <h3 class="font-bold text-yellow-900 mb-1">Hip-Height Camera</h3>
+          <p class="text-sm text-yellow-800">Hold your phone at hip / waist height — not at your face and not on the ground.</p>
+          <div class="mt-3 text-xs">
+            <span class="badge bg-yellow-100 text-yellow-900">Same height as player's hips</span>
+          </div>
+        </div>
+
+        <div class="tip-card bg-purple-50 border border-purple-200">
+          <div class="text-3xl mb-2">👁️</div>
+          <h3 class="font-bold text-purple-900 mb-1">Full Body in Frame</h3>
+          <p class="text-sm text-purple-800">Both the player's HEAD and FEET must be visible at all times. Don't zoom in.</p>
+          <div class="mt-3 text-xs">
+            <span class="badge bg-purple-100 text-purple-900">Head + feet always visible</span>
+          </div>
+        </div>
+
+        <div class="tip-card bg-orange-50 border border-orange-200">
+          <div class="text-3xl mb-2">☀️</div>
+          <h3 class="font-bold text-orange-900 mb-1">Good Lighting</h3>
+          <p class="text-sm text-orange-800">Outdoors during the day is best. Avoid dark rooms or filming against bright sun.</p>
+          <div class="mt-3 flex gap-2 text-xs">
+            <span class="badge bg-orange-100 text-orange-900">✅ Outdoors</span>
+            <span class="badge bg-red-100 text-red-700">❌ Dark room</span>
+          </div>
+        </div>
+
+        <div class="tip-card bg-red-50 border border-red-200">
+          <div class="text-3xl mb-2">🎬</div>
+          <h3 class="font-bold text-red-900 mb-1">Capture the Full Action</h3>
+          <p class="text-sm text-red-800">Start recording BEFORE the action begins. Film at least 5 seconds. Keep the phone still — no panning!</p>
+          <div class="mt-3 text-xs">
+            <span class="badge bg-red-100 text-red-900">Minimum 5 seconds</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── Upload Section ─────────────────────────────────────────── -->
+    <section class="bg-white rounded-2xl shadow p-6">
+      <h2 class="text-xl font-bold text-green-900 mb-5">⬆️ Step 2 — Upload Your Video</h2>
+
+      <!-- Selection row -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">What are they doing?</label>
+          <div class="flex gap-2">
+            <button id="btn-batting" onclick="selectMode('batting')"
+              class="toggle-btn active-toggle flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              🏏 Batting
+            </button>
+            <button id="btn-bowling" onclick="selectMode('bowling')"
+              class="toggle-btn flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              🎳 Bowling
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Which hand?</label>
+          <div class="flex gap-2">
+            <button id="btn-right" onclick="selectHand('right')"
+              class="toggle-btn active-toggle flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              👉 Right
+            </button>
+            <button id="btn-left" onclick="selectHand('left')"
+              class="toggle-btn flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              👈 Left
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">Age group</label>
+          <select id="age-group"
+            class="w-full py-3 px-3 rounded-xl border-2 border-gray-200 bg-gray-50 text-gray-700 font-medium focus:outline-none focus:border-green-500">
+            <option value="under10">Under 10 🧒</option>
+            <option value="under14">Under 14 👦</option>
+            <option value="teen">Teen &amp; Adult 🏃</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Drop zone -->
+      <div id="upload-area"
+        class="upload-zone rounded-2xl p-10 text-center cursor-pointer"
+        onclick="document.getElementById('file-input').click()"
+        ondragover="handleDragOver(event)"
+        ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event)">
+        <div class="text-5xl mb-3">📹</div>
+        <p class="text-xl font-bold text-green-800 mb-1">Drop your video here</p>
+        <p class="text-gray-500 mb-2">or click to choose a file</p>
+        <p class="text-xs text-gray-400">Accepted: MP4, MOV, AVI &bull; Max size: 500 MB</p>
+        <input type="file" id="file-input" accept=".mp4,.mov,.avi,.mkv" class="hidden"
+          onchange="handleFileSelect(event)" />
+      </div>
+
+      <!-- File info bar -->
+      <div id="file-info"
+        class="hidden mt-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-4">
+        <span class="text-3xl">🎬</span>
+        <div class="flex-1 min-w-0">
+          <p id="file-name" class="font-bold text-gray-800 truncate"></p>
+          <p id="file-size" class="text-sm text-gray-500"></p>
+        </div>
+        <button onclick="clearFile()"
+          class="text-red-400 hover:text-red-600 font-bold text-sm shrink-0">✕ Remove</button>
+      </div>
+
+      <!-- ── Trim Section ──────────────────────────────────────────── -->
+      <div id="trim-section" class="hidden mt-5 rounded-2xl border-2 border-blue-200 bg-blue-50 overflow-hidden">
+
+        <!-- Header -->
+        <div class="flex items-center gap-2 px-4 py-3 bg-blue-100 border-b border-blue-200">
+          <span class="text-xl">✂️</span>
+          <div class="flex-1">
+            <p class="font-bold text-blue-900 text-sm">Select the clip to analyse</p>
+            <p class="text-xs text-blue-600">Drag the sliders to exclude other players or unwanted parts</p>
+          </div>
+          <span id="trim-duration-badge"
+            class="bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+            Full video
+          </span>
+        </div>
+
+        <!-- Video preview -->
+        <div class="px-4 pt-4">
+          <video id="preview-video" controls
+            class="w-full rounded-xl bg-black"
+            style="max-height: 280px;">
+          </video>
+        </div>
+
+        <!-- Timeline bar -->
+        <div class="px-4 pt-3 pb-1">
+          <div class="relative h-5 bg-gray-200 rounded-full overflow-hidden cursor-pointer" id="timeline-bar">
+            <!-- Excluded (dimmed) left -->
+            <div id="tl-left"  class="absolute top-0 left-0 h-full bg-gray-300 opacity-60" style="width:0%"></div>
+            <!-- Selected (highlighted) region -->
+            <div id="tl-mid"   class="absolute top-0 h-full bg-blue-400" style="left:0%;width:100%"></div>
+            <!-- Excluded (dimmed) right -->
+            <div id="tl-right" class="absolute top-0 right-0 h-full bg-gray-300 opacity-60" style="width:0%"></div>
+            <!-- Start handle -->
+            <div id="tl-start-handle"
+              class="absolute top-0 bottom-0 w-1 bg-blue-700 cursor-ew-resize"
+              style="left:0%"></div>
+            <!-- End handle -->
+            <div id="tl-end-handle"
+              class="absolute top-0 bottom-0 w-1 bg-blue-700 cursor-ew-resize"
+              style="left:100%"></div>
+          </div>
+          <!-- Time labels under timeline -->
+          <div class="flex justify-between text-xs text-gray-400 mt-1 px-0">
+            <span id="tl-label-start">0:00</span>
+            <span id="tl-label-end">0:00</span>
+          </div>
+        </div>
+
+        <!-- Sliders -->
+        <div class="px-4 pb-2 grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs font-semibold text-blue-800 mb-1 block">
+              ▶ Start at: <span id="start-time-label" class="text-blue-600">0:00</span>
+            </label>
+            <input type="range" id="start-slider"
+              min="0" max="100" value="0" step="0.1"
+              class="trim-slider w-full accent-blue-600"
+              oninput="onTrimChange()" />
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-blue-800 mb-1 block">
+              ⏹ End at: <span id="end-time-label" class="text-blue-600">–</span>
+            </label>
+            <input type="range" id="end-slider"
+              min="0" max="100" value="100" step="0.1"
+              class="trim-slider w-full accent-blue-600"
+              oninput="onTrimChange()" />
+          </div>
+        </div>
+
+        <!-- Info + preview button row -->
+        <div class="px-4 pb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div id="trim-info" class="text-xs text-blue-700 font-medium"></div>
+          <button onclick="previewSelection()"
+            class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-xs font-bold
+                   rounded-xl hover:bg-blue-700 transition-all">
+            ▶ Preview selected clip
+          </button>
+        </div>
+
+      </div>
+      <!-- ── End Trim Section ─────────────────────────────────────── -->
+
+      <!-- Analyse button -->
+      <button id="analyse-btn" onclick="startAnalysis()" disabled
+        class="mt-6 w-full py-4 px-8 rounded-xl font-bold text-lg transition-all
+               bg-gray-200 text-gray-400 cursor-not-allowed">
+        🔍 Analyse Video
+      </button>
+    </section>
+
+  </main>
+
+  <footer class="py-8 mt-4 border-t border-gray-200 bg-white">
+    <div class="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+
+      <!-- Credit -->
+      <div class="text-center sm:text-left">
+        <p class="text-sm font-semibold text-gray-700">
+          Built by <span class="text-green-800 font-bold">SrinathSankara</span>
+        </p>
+        <p class="text-xs text-gray-400 mt-1">
+          Cricket Coach AI &bull; All processing runs locally &bull; Your videos stay private
+        </p>
+      </div>
+
+      <!-- GitHub link -->
+      <a href="https://github.com/srinathsankara/CricketCoachAI"
+         target="_blank" rel="noopener noreferrer"
+         class="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300 bg-gray-50
+                hover:bg-gray-100 hover:border-gray-400 transition-all text-sm font-semibold text-gray-700">
+        <!-- GitHub SVG icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577
+                   0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755
+                   -1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305
+                   3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93
+                   0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322
+                   3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405
+                   2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84
+                   1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81
+                   2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795
+                   24 17.295 24 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        View on GitHub
+      </a>
+
+    </div>
+  </footer>
+
+  <!-- ── Processing Overlay ─────────────────────────────────────── -->
+  <div id="processing-screen"
+    class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl">
+      <div class="text-5xl mb-4 animate-bounce">🏏</div>
+      <h3 class="text-xl font-bold text-green-900 mb-2">Analysing your video...</h3>
+      <p id="proc-status" class="text-gray-500 mb-5 text-sm">Detecting body position...</p>
+
+      <div class="bg-gray-200 rounded-full h-3 overflow-hidden mb-2">
+        <div id="prog-bar" class="progress-fill h-3 rounded-full" style="width:0%"></div>
+      </div>
+      <p id="prog-pct" class="text-sm font-semibold text-green-800 mb-5">0%</p>
+
+      <div class="text-xs text-gray-400 space-y-1 border-t pt-4">
+        <p>⏱ This usually takes 30–60 seconds</p>
+        <p>🔒 Your video never leaves your computer</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

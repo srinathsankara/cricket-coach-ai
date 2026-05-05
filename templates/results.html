@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket Coach AI — Results</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-amber-50 min-h-screen font-sans">
+
+<!-- ── Header ────────────────────────────────────────────────────────── -->
+<header class="bg-green-900 text-white py-4 px-6 shadow-lg">
+  <div class="max-w-5xl mx-auto flex items-center gap-3">
+    <span class="text-4xl">🏏</span>
+    <div class="flex-1">
+      <h1 class="text-2xl font-extrabold tracking-tight">Cricket Coach AI</h1>
+      <p class="text-green-300 text-sm">
+        {{ '🏏 Batting' if result.mode == 'batting' else '🎳 Bowling' }} Analysis &bull;
+        {{ 'Right-handed' if result.handedness == 'right' else 'Left-handed' }}
+        {% if result.clip_duration %}&bull; {{ result.clip_duration }}s clip{% endif %}
+      </p>
+    </div>
+    <a href="/" class="bg-white text-green-900 font-bold px-4 py-2 rounded-xl text-sm
+                        hover:bg-green-50 transition-all">← New Video</a>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-6 space-y-5">
+
+  <!-- Low-confidence warning -->
+  {% if result.confidence_score < 60 %}
+  <div class="p-4 bg-yellow-50 border-2 border-yellow-300 rounded-xl flex gap-3 items-start">
+    <span class="text-2xl">⚠️</span>
+    <div>
+      <p class="font-bold text-yellow-800">AI struggled to track the body clearly</p>
+      <p class="text-sm text-yellow-700">
+        Pose detected in only <strong>{{ result.confidence_score }}%</strong> of frames.
+        Try re-recording outdoors with better lighting and full body always in frame.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Overall banner -->
+  {% set good_count = result.checkpoints | selectattr('status','equalto','good') | list | length %}
+  {% set total      = result.checkpoints | length %}
+  <div class="bg-white rounded-2xl shadow p-5 flex flex-wrap items-center gap-4">
+    <div class="flex-1">
+      <h2 class="text-2xl font-bold text-green-900">
+        {% if good_count >= total * 0.7 %}🌟 Brilliant effort!
+        {% elif good_count >= total * 0.4 %}👍 Good work — keep practising!
+        {% else %}💪 Lots to work on — you'll get there!
+        {% endif %}
+      </h2>
+      <p class="text-gray-500 mt-1">We checked <strong>{{ total }}</strong> things in your technique.</p>
+    </div>
+    <div class="text-center shrink-0">
+      <div class="w-20 h-20 rounded-full flex items-center justify-center text-white font-extrabold text-2xl
+        {% if total > 0 and good_count / total >= 0.6 %}bg-green-500
+        {% elif total > 0 and good_count / total >= 0.3 %}bg-yellow-400
+        {% else %}bg-orange-400{% endif %}">
+        {{ good_count }}/{{ total }}
+      </div>
+      <p class="text-xs text-gray-500 mt-1">checks passed</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!--  SMART COACHING VIEWER                                            -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+
+      <!-- Video + canvas overlay -->
+      <div class="relative bg-black" id="viewer-wrap">
+        <video id="coaching-video"
+          class="w-full block viewer-video"
+          style="max-height:450px; transition: transform 0.45s cubic-bezier(.4,0,.2,1);"
+          preload="auto" playsinline>
+          <source src="/results/video/{{ result.video_filename }}" type="video/mp4" />
+          Your browser does not support video playback.
+        </video>
+
+        <!-- Canvas drawn on top — angle arc, trail, label -->
+        <canvas id="annotation-canvas"
+          class="absolute inset-0 pointer-events-none"
+          style="width:100%;height:100%;"></canvas>
+
+        <!-- Continue button — shown when video auto-pauses at issue moment -->
+        <div id="play-from-here"
+          class="hidden absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-3">
+          <!-- Coaching tip strip above the button -->
+          <div id="continue-tip"
+            class="pointer-events-none bg-black bg-opacity-70 text-white text-sm font-semibold
+                   px-5 py-2 rounded-xl max-w-xs text-center leading-snug shadow-xl"
+            style="backdrop-filter:blur(3px)">
+            ⏸ Issue detected — see overlay for details
+          </div>
+          <button onclick="playFromIssue()"
+            class="pointer-events-auto flex items-center gap-2 bg-green-600 hover:bg-green-500
+                   text-white font-bold px-8 py-3 rounded-full shadow-2xl text-base
+                   border-2 border-green-400 transition-all"
+            style="backdrop-filter:blur(2px)">
+            ▶ Continue in slow-mo
+          </button>
+        </div>
+
+        <!-- "Now Watching" badge (top-left) -->
+        <div id="now-watching"
+          class="hidden absolute top-3 left-3 bg-red-600 text-white text-xs font-bold
+                 px-3 py-1 rounded-full flex items-center gap-2 shadow-lg">
+          <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+          <span id="nw-label">–</span>
+        </div>
+
+        <!-- Floating callout annotation (slides in from left) -->
+        <div id="callout-box"
+          class="hidden absolute left-3 bottom-16 max-w-xs bg-red-600 text-white
+                 rounded-xl p-3 shadow-2xl text-xs font-semibold leading-relaxed
+                 callout-enter">
+          <p id="callout-title" class="text-sm font-bold mb-1"></p>
+          <p id="callout-body"></p>
+          <div class="absolute -bottom-2 left-5 w-4 h-4 bg-red-600 rotate-45"></div>
+        </div>
+      </div>
+
+      <!-- Controls bar -->
+      <div class="bg-gray-800 px-4 py-3 flex flex-wrap items-center gap-3">
+
+        <!-- Speed -->
+        <div class="flex items-center gap-1">
+          <span class="viewer-label">SPEED</span>
+          <button id="speed-025" onclick="setSpeed(0.25)" class="vbtn">¼×</button>
+          <button id="speed-05"  onclick="setSpeed(0.5)"  class="vbtn">½×</button>
+          <button id="speed-1"   onclick="setSpeed(1)"    class="vbtn vbtn-active">1×</button>
+        </div>
+
+        <div class="w-px h-5 bg-gray-600"></div>
+
+        <!-- Zoom -->
+        <div class="flex items-center gap-1">
+          <span class="viewer-label">ZOOM</span>
+          <button onclick="zoomStep(1)"   class="vbtn">🔍 +</button>
+          <button onclick="zoomStep(-1)"  class="vbtn">🔍 −</button>
+          <button onclick="resetViewer()" class="vbtn">↩ Reset</button>
+        </div>
+
+        <div class="w-px h-5 bg-gray-600"></div>
+
+        <!-- Loop -->
+        <div class="flex items-center gap-1">
+          <span class="viewer-label">LOOP</span>
+          <button id="loop-btn" onclick="toggleLoop()" class="vbtn vbtn-active">↺ ON</button>
+        </div>
+
+        <!-- Hint text -->
+        <p class="ml-auto text-gray-400 text-xs hidden sm:block">
+          👇 Click <strong class="text-white">Watch This</strong> on any issue below
+        </p>
+      </div>
+
+      <!-- Colour legend -->
+      <div class="bg-gray-850 border-t border-gray-700 px-4 py-2 flex flex-wrap gap-4 text-xs text-gray-400">
+        <span>── Grey lines = AI skeleton</span>
+        <span>🔴 Red dot = problem joint (appears only at the issue moment)</span>
+        <span class="ml-auto italic">Click ▶ Watch This on a card below</span>
+      </div>
+    </div>
+  </section>
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+
+  <!-- Two-column layout -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+    <!-- LEFT: Scorecard -->
+    <div class="bg-white rounded-2xl shadow p-5">
+      <h3 class="font-bold text-gray-700 mb-3">📊 Scorecard</h3>
+      <div class="space-y-2">
+        {% for cp in result.checkpoints %}
+        <div class="flex items-center gap-3 p-3 rounded-xl
+          {% if cp.status == 'good' %}bg-green-50 border border-green-200
+          {% elif cp.status == 'improve' %}bg-yellow-50 border border-yellow-200
+          {% elif cp.status == 'fix' %}bg-red-50 border border-red-200
+          {% else %}bg-gray-50 border border-gray-200{% endif %}">
+          <span class="text-xl w-7 text-center">{{ cp.emoji }}</span>
+          <p class="flex-1 font-semibold text-sm
+            {% if cp.status == 'good' %}text-green-900
+            {% elif cp.status == 'improve' %}text-yellow-900
+            {% elif cp.status == 'fix' %}text-red-900
+            {% else %}text-gray-600{% endif %}">{{ cp.name }}</p>
+          <span class="shrink-0 text-xs font-bold px-2 py-1 rounded-full
+            {% if cp.status == 'good' %}bg-green-200 text-green-900
+            {% elif cp.status == 'improve' %}bg-yellow-200 text-yellow-900
+            {% elif cp.status == 'fix' %}bg-red-200 text-red-900
+            {% else %}bg-gray-200 text-gray-600{% endif %}">
+            {% if cp.status == 'good' %}GREAT!
+            {% elif cp.status == 'improve' %}IMPROVE
+            {% elif cp.status == 'fix' %}FIX THIS
+            {% else %}UNCLEAR{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- RIGHT: Issues -->
+    <div class="space-y-5">
+
+      {% if result.top_issues %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h3 class="text-lg font-bold text-green-900 mb-1">
+          🎯 Top {{ result.top_issues|length }} Thing{{ 's' if result.top_issues|length > 1 else '' }} to Fix
+        </h3>
+        <p class="text-gray-400 text-xs mb-4">
+          Click <strong>Watch This</strong> on any card — the viewer above will zoom into that exact spot in slow motion.
+        </p>
+        <div class="space-y-5">
+          {% for cp in result.top_issues %}
+          <div class="rounded-2xl border-2 overflow-hidden
+            {% if cp.status == 'fix' %}border-red-300{% else %}border-yellow-300{% endif %}">
+
+            <!-- Card header with Watch button -->
+            <div class="flex items-center gap-3 px-4 py-3
+              {% if cp.status == 'fix' %}bg-red-100{% else %}bg-yellow-100{% endif %}">
+              <span class="text-2xl shrink-0">{{ cp.emoji }}</span>
+              <p class="flex-1 font-bold text-sm
+                {% if cp.status == 'fix' %}text-red-900{% else %}text-yellow-900{% endif %}">
+                {{ loop.index }}. {{ cp.name }}
+              </p>
+              <!-- Watch This button — passes issue index to JS -->
+              <button onclick="watchIssue({{ loop.index0 }})"
+                class="shrink-0 flex items-center gap-1 bg-gray-900 text-white
+                       text-xs font-bold px-3 py-1.5 rounded-xl
+                       hover:bg-gray-700 transition-all watch-btn"
+                data-idx="{{ loop.index0 }}">
+                ▶ Watch This
+              </button>
+            </div>
+
+            <!-- Card body -->
+            <div class="px-4 py-4 space-y-3 bg-white">
+              <p class="text-sm font-semibold
+                {% if cp.status == 'fix' %}text-red-800{% else %}text-yellow-800{% endif %}">
+                {{ cp.message }}
+              </p>
+              {% if cp.what_wrong %}
+              <div class="rounded-xl bg-gray-50 border border-gray-200 p-3">
+                <p class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">🔍 What the AI detected</p>
+                <p class="text-sm text-gray-700">{{ cp.what_wrong }}</p>
+              </div>
+              {% endif %}
+              {% if cp.why_matters %}
+              <div class="rounded-xl bg-orange-50 border border-orange-200 p-3">
+                <p class="text-xs font-bold text-orange-600 uppercase tracking-wide mb-1">⚡ Why this matters</p>
+                <p class="text-sm text-orange-800">{{ cp.why_matters }}</p>
+              </div>
+              {% endif %}
+              {% if cp.how_to_fix %}
+              <div class="rounded-xl bg-blue-50 border border-blue-200 p-3">
+                <p class="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">🎯 How to fix it</p>
+                <p class="text-sm text-blue-800">{{ cp.how_to_fix }}</p>
+              </div>
+              {% endif %}
+              {% if cp.drill %}
+              <div class="rounded-xl bg-green-50 border border-green-300 p-3">
+                <p class="text-xs font-bold text-green-700 uppercase tracking-wide mb-1">🏋️ Practice drill</p>
+                <p class="text-sm text-green-800">{{ cp.drill }}</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if result.top_good %}
+      <div class="bg-white rounded-2xl shadow p-5">
+        <h3 class="text-lg font-bold text-green-700 mb-1">🌟 What You're Doing Great!</h3>
+        <div class="space-y-3 mt-3">
+          {% for cp in result.top_good %}
+          <div class="p-4 rounded-xl border-2 border-green-300 bg-green-50 flex items-start gap-3">
+            <span class="text-2xl shrink-0">{{ cp.emoji }}</span>
+            <div>
+              <p class="font-bold text-green-900">{{ cp.name }}</p>
+              <p class="text-sm text-green-800 mt-1">{{ cp.message }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if not result.top_issues and not result.top_good %}
+      <div class="bg-white rounded-2xl shadow p-8 text-center">
+        <p class="text-4xl mb-3">🤔</p>
+        <p class="font-semibold text-gray-600">Not enough body tracking data.</p>
+        <p class="text-sm text-gray-400 mt-2">Re-record outdoors with better lighting and full body always in frame.</p>
+      </div>
+      {% endif %}
+
+      <!-- Practice tip -->
+      <div class="bg-green-900 text-white rounded-2xl shadow p-5">
+        <h3 class="font-bold text-lg mb-2">💡 Practice Tip</h3>
+        {% if result.mode == 'batting' %}
+        <p class="text-green-200 text-sm">
+          Slow-motion mirror practice is the secret! Stand in front of a mirror and go through
+          your action very slowly, checking each point shown above. Record again after a week to compare.
+        </p>
+        {% else %}
+        <p class="text-green-200 text-sm">
+          Tape a target on a wall and practise hitting it from a good length. Record from the side
+          and check your action is improving after each session!
+        </p>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-4 justify-center pt-2 pb-6">
+    <a href="/" class="bg-green-900 text-white font-bold px-8 py-3 rounded-xl
+                        hover:bg-green-800 transition-all text-lg">
+      🔄 Analyse Another Video
+    </a>
+  </div>
+
+</main>
+
+<!-- ── Footer ────────────────────────────────────────────────────────── -->
+<footer class="py-8 border-t border-gray-200 bg-white">
+  <div class="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="text-center sm:text-left">
+      <p class="text-sm font-semibold text-gray-700">
+        Built by <span class="text-green-800 font-bold">SrinathSankara</span>
+      </p>
+      <p class="text-xs text-gray-400 mt-1">
+        Cricket Coach AI &bull; All processing runs locally &bull; Your videos stay private
+      </p>
+    </div>
+    <a href="https://github.com/srinathsankara/CricketCoachAI"
+       target="_blank" rel="noopener noreferrer"
+       class="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300
+              bg-gray-50 hover:bg-gray-100 transition-all text-sm font-semibold text-gray-700">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577
+                 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755
+                 -1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305
+                 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93
+                 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322
+                 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405
+                 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84
+                 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81
+                 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795
+                 24 17.295 24 12c0-6.63-5.37-12-12-12z"/>
+      </svg>
+      View on GitHub
+    </a>
+  </div>
+</footer>
+
+<!-- ── Pass Python data to JS ─────────────────────────────────────────── -->
+<script>
+  const LANDMARK_POSITIONS = {{ result.landmark_positions | tojson }};
+  const TOP_ISSUES         = {{ result.top_issues | tojson }};
+  const CLIP_DURATION      = {{ result.clip_duration or 0 }};
+  const FRAME_LANDMARKS    = {{ result.frame_landmarks | tojson }};
+</script>
+<script src="/static/js/results.js"></script>
+
+</body>
+</html>
