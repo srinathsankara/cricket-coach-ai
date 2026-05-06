@@ -31,6 +31,31 @@ let autoPaused           = false;
 // Pulse state for the tracking dot
 let pulse = { r: 18, growing: true };
 
+// ── Skeleton connections (mirrors Python's DRAW_CONNECTIONS) ─────────────
+const SKELETON_CONNECTIONS = [
+  ['left_shoulder',  'right_shoulder'],
+  ['left_shoulder',  'left_elbow'],
+  ['left_elbow',     'left_wrist'],
+  ['right_shoulder', 'right_elbow'],
+  ['right_elbow',    'right_wrist'],
+  ['left_shoulder',  'left_hip'],
+  ['right_shoulder', 'right_hip'],
+  ['left_hip',       'right_hip'],
+  ['left_hip',       'left_knee'],
+  ['left_knee',      'left_ankle'],
+  ['right_hip',      'right_knee'],
+  ['right_knee',     'right_ankle'],
+];
+
+// Shot phase definitions for batting (proportion of clip)
+const BATTING_PHASES = [
+  { label: 'Stance',        start: 0.00, end: 0.25, col: 'rgba(50,180,50,0.75)'   },
+  { label: 'Backlift',      start: 0.25, end: 0.55, col: 'rgba(240,195,0,0.75)'  },
+  { label: 'Downswing',     start: 0.55, end: 0.76, col: 'rgba(255,120,0,0.75)'  },
+  { label: 'Impact',        start: 0.76, end: 0.85, col: 'rgba(215,25,25,0.85)'  },
+  { label: 'Follow-Through',start: 0.85, end: 1.00, col: 'rgba(50,120,255,0.75)' },
+];
+
 // ── Joint zones — fallback y-positions and labels ─────────────────────────
 const JOINT_ZONE = {
   nose:           { y: 0.10, label: 'Head' },
@@ -180,13 +205,17 @@ function drawLoop() {
     // Frozen frame: full overlay with arc + big label + focus ring
     _drawFrozen(issue, cw, ch);
   } else {
-    // Always draw the tracking dot so user knows which joint to watch
+    // 1. Skeleton with highlighted limbs relevant to this issue
+    _drawSkeletonCanvas(activeJointPositions, cw, ch, issue);
+
+    // 2. Pulsing red tracking dot on the problem joint
     _drawTrackingDot(issue, cw, ch);
 
-    // After the issue starts: add trail + arc + label
+    // 3. After the issue starts: trail + live angle + arc + label
     const startSec = issue.issue_start_sec ?? 0;
     if (video.currentTime >= startSec) {
       _drawTrail(cw, ch);
+      _drawLiveAngle(issue, activeJointPositions, cw, ch);
 
       if (issue.angle_joints && issue.angle_joints.length === 3) {
         const p1 = _getJointPx(issue.angle_joints[0], activeJointPositions, cw, ch);
@@ -197,6 +226,9 @@ function drawLoop() {
 
       if (issue.canvas_label) _drawCanvasLabel(issue.canvas_label, cw, ch, 0.85);
     }
+
+    // 4. Phase bar always visible at bottom
+    _drawPhaseBar(cw, ch);
   }
 }
 
@@ -253,6 +285,9 @@ function _drawFrozen(issue, cw, ch) {
 
   const pos = _getJointPx(primaryJoint, positions, cw, ch);
 
+  // 0. Skeleton with highlighted limbs
+  _drawSkeletonCanvas(positions, cw, ch, issue);
+
   // 1. Angle arc
   if (issue.angle_joints && issue.angle_joints.length === 3) {
     const p1 = _getJointPx(issue.angle_joints[0], positions, cw, ch);
@@ -303,6 +338,117 @@ function _drawFrozen(issue, cw, ch) {
     const label = JOINT_ZONE[primaryJoint]?.label || primaryJoint.replace(/_/g, ' ');
     _drawLabelPill(pos.x, pos.y, label, cw, ch);
   }
+
+  // 4. Phase bar at bottom
+  _drawPhaseBar(cw, ch);
+}
+
+// ── Skeleton on canvas — highlights issue limbs in orange, rest in green ──
+function _drawSkeletonCanvas(positions, cw, ch, issue) {
+  if (!positions || !Object.keys(positions).length) return;
+
+  const problemSet   = new Set(issue?.problem_joints || []);
+  const angleSet     = new Set(issue?.angle_joints   || []);
+  const allHighlight = new Set([...problemSet, ...angleSet]);
+
+  // Limb connections
+  for (const [a, b] of SKELETON_CONNECTIONS) {
+    const pa = _getJointPx(a, positions, cw, ch);
+    const pb = _getJointPx(b, positions, cw, ch);
+    if (!pa || !pb) continue;
+    const isHighlight = allHighlight.has(a) || allHighlight.has(b);
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.strokeStyle = isHighlight
+      ? 'rgba(255, 140, 0, 0.82)'
+      : 'rgba(100, 210, 100, 0.30)';
+    ctx.lineWidth   = isHighlight ? 4 : 1.5;
+    ctx.lineCap     = 'round';
+    ctx.stroke();
+  }
+
+  // Joint dots
+  const allJoints = [...new Set(SKELETON_CONNECTIONS.flat())];
+  for (const name of allJoints) {
+    const pos = _getJointPx(name, positions, cw, ch);
+    if (!pos) continue;
+    const isProb = problemSet.has(name) || angleSet.has(name);
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, isProb ? 7 : 4, 0, Math.PI * 2);
+    ctx.fillStyle = isProb ? 'rgba(255, 100, 0, 0.90)' : 'rgba(80, 200, 80, 0.45)';
+    ctx.fill();
+  }
+}
+
+// ── Live angle badge — shown while video is playing (not just on pause) ───
+function _drawLiveAngle(issue, positions, cw, ch) {
+  if (!issue?.angle_joints || issue.angle_joints.length !== 3) return;
+  const p1 = _getJointPx(issue.angle_joints[0], positions, cw, ch);
+  const vp = _getJointPx(issue.angle_joints[1], positions, cw, ch);
+  const p2 = _getJointPx(issue.angle_joints[2], positions, cw, ch);
+  if (!p1 || !vp || !p2) return;
+
+  const angle = Math.round(_computeAngle(p1, vp, p2));
+  const text  = `${angle}°`;
+
+  ctx.font = 'bold 21px system-ui, sans-serif';
+  const tw = ctx.measureText(text).width;
+  const bw = tw + 20, bh = 34;
+  const bx = Math.max(2, Math.min(cw - bw - 2, vp.x + 20));
+  const by = Math.max(2, Math.min(ch - bh - 2, vp.y - bh - 10));
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  _roundRect(ctx, bx - 2, by - 2, bw + 4, bh + 4, 8); ctx.fill();
+  // Badge
+  ctx.fillStyle = 'rgba(200, 90, 0, 0.96)';
+  _roundRect(ctx, bx, by, bw, bh, 6); ctx.fill();
+  // Text
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, bx + 10, by + bh * 0.74);
+}
+
+// ── Phase timeline bar — always shown at bottom of canvas ─────────────────
+function _drawPhaseBar(cw, ch) {
+  if (!CLIP_DURATION || CLIP_DURATION <= 0) return;
+
+  const barH = 22;
+  const barY = ch - barH - 5;
+  const barW = cw - 20;
+  const barX = 10;
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  _roundRect(ctx, barX - 2, barY - 2, barW + 4, barH + 4, 5); ctx.fill();
+
+  for (const p of BATTING_PHASES) {
+    const x = barX + p.start * barW;
+    const w = (p.end   - p.start) * barW;
+    ctx.fillStyle = p.col;
+    ctx.fillRect(x, barY, w, barH);
+    // Segment divider
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + w, barY); ctx.lineTo(x + w, barY + barH);
+    ctx.stroke();
+    // Label
+    if (w > 52) {
+      ctx.font      = 'bold 10px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(p.label, x + 5, barY + 14);
+    }
+  }
+
+  // Playhead marker
+  const progress = Math.min(video.currentTime / CLIP_DURATION, 1.0);
+  const px = barX + progress * barW;
+  ctx.fillStyle   = 'rgba(255,255,255,0.97)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.80)';
+  ctx.lineWidth   = 1;
+  _roundRect(ctx, px - 2, barY - 4, 4, barH + 8, 2);
+  ctx.fill(); ctx.stroke();
 }
 
 // ── Angle arc ─────────────────────────────────────────────────────────────

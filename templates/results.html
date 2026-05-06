@@ -181,9 +181,11 @@
 
       <!-- Colour legend -->
       <div class="bg-gray-850 border-t border-gray-700 px-4 py-2 flex flex-wrap gap-4 text-xs text-gray-400">
-        <span>── Grey lines = AI skeleton</span>
-        <span>🔴 Red dot = tracks the problem joint throughout the video</span>
-        <span>🟠 Orange trail = joint path during slow-mo</span>
+        <span>🟢 Green skeleton = full body joints</span>
+        <span>🟠 Orange skeleton = problem limb highlighted</span>
+        <span>🔴 Red dot = tracks the problem joint</span>
+        <span>🟧 Orange badge = live angle reading</span>
+        <span>── Bottom bar = shot phase timeline</span>
         <span class="ml-auto italic">Click Watch This on a card below to start</span>
       </div>
     </div>
@@ -386,6 +388,7 @@
   const TOP_ISSUES         = {{ result.top_issues | tojson }};
   const CLIP_DURATION      = {{ result.clip_duration or 0 }};
   const FRAME_LANDMARKS    = {{ result.frame_landmarks | tojson }};
+  const ANALYSIS_MODE      = {{ result.mode | tojson }};
 </script>
 <script src="/static/js/results.js"></script>
 

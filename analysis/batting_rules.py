@@ -12,6 +12,9 @@ def analyze_batting(frame_data, handedness='right'):
         _follow_through(frame_data),
         _head_position(frame_data),
         _balance(frame_data),
+        _elbow_position(frame_data, handedness),
+        _weight_transfer(frame_data, handedness),
+        _bat_path(frame_data, handedness),
     ]
 
 
@@ -393,3 +396,233 @@ def _balance(frames):
         issue_frame_idx=first_issue_idx,
         problem=('left_hip', 'right_hip', 'left_shoulder', 'right_shoulder'),
         canvas_label=f"Body lean: {int(t)}° sideways (keep under 12°) — falling over!")
+
+
+def _elbow_position(frames, handedness='right'):
+    """Front elbow should be bent (70–140°) during the swing for proper bat speed."""
+    front_shoulder = 'left_shoulder' if handedness == 'right' else 'right_shoulder'
+    front_elbow    = 'left_elbow'    if handedness == 'right' else 'right_elbow'
+    front_wrist    = 'left_wrist'    if handedness == 'right' else 'right_wrist'
+
+    mid_start = max(0, int(len(frames) * 0.30))
+    mid_end   = max(mid_start + 1, int(len(frames) * 0.80))
+
+    angles = []
+    worst_idx       = mid_start
+    worst_deviation = -1.0
+    for i, fd in enumerate(frames[mid_start:mid_end], start=mid_start):
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            s  = landmark_xy(lm, front_shoulder, w, h)
+            e  = landmark_xy(lm, front_elbow,    w, h)
+            wt = landmark_xy(lm, front_wrist,    w, h)
+            angle = calculate_angle(s, e, wt)
+            angles.append(angle)
+            deviation = max(70 - angle, angle - 140, 0)
+            if deviation > worst_deviation:
+                worst_deviation = deviation
+                worst_idx = i
+        except Exception:
+            continue
+
+    if not angles:
+        return _unknown('Elbow Position')
+
+    a = float(np.mean(angles))
+
+    if 70 <= a <= 140:
+        return _checkpoint('Elbow Position', 'good', '✅',
+                           "Good front elbow position — bent and controlled through the swing!",
+                           issue_frame_idx=worst_idx, good=(front_elbow,))
+    if a > 140:
+        return _checkpoint(
+            'Elbow Position', 'improve', '⚠️', "Front arm too straight — bend your elbow more.",
+            what_wrong=(f"Your front elbow angle averages {int(a)}°. "
+                        "Ideal during the swing is 70–140°."),
+            why_matters=("A straight front arm locks the swing and reduces bat speed "
+                         "through the hitting zone."),
+            how_to_fix=("Keep the front elbow bent and pointing down-and-away during the downswing. "
+                        "Think of pulling a door handle toward you as you swing."),
+            drill=("DRILL — Towel Tuck: Tuck a rolled towel under your front armpit. "
+                   "Practise your swing without dropping the towel — keeps the elbow from splaying."),
+            issue_frame_idx=worst_idx, problem=(front_elbow,),
+            angle_joints=(front_shoulder, front_elbow, front_wrist),
+            canvas_label=f"Front elbow: {int(a)}° — too STRAIGHT (needs 70–140°)")
+    return _checkpoint(
+        'Elbow Position', 'fix', '❌', "Front elbow too bent — chicken-winged. Open it up.",
+        what_wrong=(f"Front elbow angle is only {int(a)}° — "
+                    "the arm is folding back too tightly."),
+        why_matters=("Over-bending the elbow prevents full bat speed and "
+                     "cuts off the follow-through."),
+        how_to_fix=("Let the front arm extend naturally as you swing. "
+                    "Don't pull the elbow back — let it lead the bat through."),
+        drill=("DRILL — Swing to Contact: Focus on extending through the ball. "
+               "Front elbow naturally straightens as the bat passes the contact zone."),
+        issue_frame_idx=worst_idx, problem=(front_elbow,),
+        angle_joints=(front_shoulder, front_elbow, front_wrist),
+        canvas_label=f"Front elbow: {int(a)}° — too BENT (needs 70–140°)")
+
+
+def _weight_transfer(frames, handedness='right'):
+    """Front knee should load more (bend further) through the shot, showing weight transfer."""
+    front_hip   = 'left_hip'   if handedness == 'right' else 'right_hip'
+    front_knee  = 'left_knee'  if handedness == 'right' else 'right_knee'
+    front_ankle = 'left_ankle' if handedness == 'right' else 'right_ankle'
+
+    early_end  = max(1, int(len(frames) * 0.25))
+    late_start = max(0, int(len(frames) * 0.70))
+
+    early_angles = []
+    for fd in frames[:early_end]:
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            fh = landmark_xy(lm, front_hip,   w, h)
+            fk = landmark_xy(lm, front_knee,  w, h)
+            fa = landmark_xy(lm, front_ankle, w, h)
+            early_angles.append(calculate_angle(fh, fk, fa))
+        except Exception:
+            continue
+
+    late_angles = []
+    for fd in frames[late_start:]:
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            fh = landmark_xy(lm, front_hip,   w, h)
+            fk = landmark_xy(lm, front_knee,  w, h)
+            fa = landmark_xy(lm, front_ankle, w, h)
+            late_angles.append(calculate_angle(fh, fk, fa))
+        except Exception:
+            continue
+
+    if not early_angles or not late_angles:
+        return _unknown('Weight Transfer')
+
+    early_mean = float(np.mean(early_angles))
+    late_mean  = float(np.mean(late_angles))
+    transfer   = early_mean - late_mean   # positive = knee bends more = weight loading forward
+
+    if transfer >= 8:
+        return _checkpoint('Weight Transfer', 'good', '✅',
+                           "Great weight transfer — loading onto the front foot through the shot!",
+                           issue_frame_idx=late_start, good=(front_knee,))
+    if transfer >= 0:
+        return _checkpoint(
+            'Weight Transfer', 'improve', '⚠️', "Weight transfer weak — push through more.",
+            what_wrong=(f"Front knee only bends ≈{int(transfer)}° more through the shot. "
+                        "Ideal is 8°+ additional loading."),
+            why_matters=("Poor weight transfer keeps power in your back foot, not in the ball. "
+                         "Shots feel weak and lack penetration."),
+            how_to_fix=("Feel your front knee flexing forward as you hit — like lunging into the ball. "
+                        "Weight should be clearly on the front foot at the end of every shot."),
+            drill=("DRILL — Front Foot Press: At finish of each shot, your front knee should "
+                   "be clearly bent. If it stays straight, you haven't transferred. 15 slow swings."),
+            issue_frame_idx=late_start, problem=(front_knee,),
+            angle_joints=(front_hip, front_knee, front_ankle),
+            canvas_label="Weight not on front foot — lean INTO the shot!")
+    return _checkpoint(
+        'Weight Transfer', 'fix', '❌', "Falling back — weight staying on back foot.",
+        what_wrong=(f"Front knee angle actually opens ≈{int(abs(transfer))}° through the shot. "
+                    "Weight is shifting backward, not forward."),
+        why_matters=("Playing back when you should go forward causes mistimed shots, "
+                     "weak drives, and being caught at mid-off constantly."),
+        how_to_fix=("Step into the ball with the front foot FIRST. Front knee bends forward. "
+                    "Imagine pushing someone away from you with your front hip."),
+        drill=("DRILL — Cone Step: Place a cone 60 cm in front of you. On every shot "
+               "your front foot must land beside the cone. Repeat 20 times."),
+        issue_frame_idx=late_start, problem=(front_knee,),
+        angle_joints=(front_hip, front_knee, front_ankle),
+        canvas_label="Weight on BACK foot — push FORWARD into the shot!")
+
+
+def _bat_path(frames, handedness='right'):
+    """Bat should travel in a straight vertical line — horizontal drift = across-the-line shot."""
+    top_wrist = 'left_wrist' if handedness == 'right' else 'right_wrist'
+
+    # Find peak backlift frame (wrist at highest point = lowest normalised y)
+    peak_idx = -1
+    peak_y   = 9999.0
+    for i, fd in enumerate(frames):
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            wy = landmark_xy(lm, top_wrist, w, h)[1]
+            if wy < peak_y:
+                peak_y = wy
+                peak_idx = i
+        except Exception:
+            continue
+
+    if peak_idx < 0 or peak_idx >= len(frames) - 3:
+        return _unknown('Bat Path')
+
+    peak_lm = frames[peak_idx]['landmarks']
+    if peak_lm is None:
+        return _unknown('Bat Path')
+
+    try:
+        pw, ph = frames[peak_idx]['w'], frames[peak_idx]['h']
+        peak_x = landmark_xy(peak_lm, top_wrist, pw, ph)[0]
+    except Exception:
+        return _unknown('Bat Path')
+
+    # Measure horizontal drift during the 25 frames after peak
+    drift_frames = frames[peak_idx: min(peak_idx + 25, len(frames))]
+    x_positions  = []
+    for fd in drift_frames:
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            x_positions.append(landmark_xy(lm, top_wrist, w, h)[0])
+        except Exception:
+            continue
+
+    if len(x_positions) < 3:
+        return _unknown('Bat Path')
+
+    frame_w   = frames[0]['w'] or 640
+    max_drift = max(abs(x - peak_x) for x in x_positions)
+    drift_pct = max_drift / frame_w * 100
+
+    if drift_pct <= 6:
+        return _checkpoint('Bat Path', 'good', '✅',
+                           "Straight bat path — coming down beautifully in a vertical line!",
+                           issue_frame_idx=peak_idx, good=(top_wrist,))
+    if drift_pct <= 14:
+        return _checkpoint(
+            'Bat Path', 'improve', '⚠️', "Bat drifting slightly — keep it straighter.",
+            what_wrong=(f"The bat drifts ≈{int(drift_pct)}% of frame width during the downswing. "
+                        "Ideal is under 6%."),
+            why_matters=("A drifting bat path opens or closes the face — "
+                         "causing edges and missed connections."),
+            how_to_fix=("Pull the bat handle straight down toward the ball. "
+                        "The top hand guides — don't let it wander across the body."),
+            drill=("DRILL — Bat on String: Suspend a ball at knee height on a string. "
+                   "Practise hitting it with a straight vertical swing — no drift allowed."),
+            issue_frame_idx=peak_idx, problem=(top_wrist,),
+            canvas_label=f"Bat drifting ≈{int(drift_pct)}% across — keep it STRAIGHT!")
+    return _checkpoint(
+        'Bat Path', 'fix', '❌', "Bat swinging across the line — major drift detected.",
+        what_wrong=(f"The bat drifts {int(drift_pct)}% of frame width — "
+                    "clearly angled across the line."),
+        why_matters=("An across-the-line shot is the #1 cause of LBW and bowled dismissals. "
+                     "You'll keep getting out to straight balls."),
+        how_to_fix=("Start with the bat face toward the bowler at the top of backlift. "
+                    "Pull the handle STRAIGHT DOWN toward your toes. "
+                    "Bat face should point forward at impact, not to leg or off side."),
+        drill=("DRILL — Chalk Line Drill: Draw a straight line on the ground toward the bowler. "
+               "Every swing must follow that line — bat stays above it throughout."),
+        issue_frame_idx=peak_idx, problem=(top_wrist,),
+        canvas_label=f"Bat ACROSS the line — {int(drift_pct)}% drift! Hit STRAIGHT.")
