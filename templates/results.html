@@ -97,7 +97,7 @@
             style="backdrop-filter:blur(3px)">
             ⏸ Issue detected — see overlay for details
           </div>
-          <button onclick="playFromIssue()"
+          <button id="continue-btn" onclick="playFromIssue()"
             class="pointer-events-auto flex items-center gap-2 bg-green-600 hover:bg-green-500
                    text-white font-bold px-8 py-3 rounded-full shadow-2xl text-base
                    border-2 border-green-400 transition-all"
@@ -231,11 +231,20 @@
 
       {% if result.top_issues %}
       <div class="bg-white rounded-2xl shadow p-5">
-        <h3 class="text-lg font-bold text-green-900 mb-1">
-          🎯 Top {{ result.top_issues|length }} Thing{{ 's' if result.top_issues|length > 1 else '' }} to Fix
-        </h3>
+        <div class="flex items-center gap-3 mb-1">
+          <h3 class="text-lg font-bold text-green-900 flex-1">
+            🎯 Top {{ result.top_issues|length }} Thing{{ 's' if result.top_issues|length > 1 else '' }} to Fix
+          </h3>
+          {% if result.top_issues|length > 1 %}
+          <button onclick="watchAll()"
+            class="flex items-center gap-1.5 bg-green-800 hover:bg-green-700 text-white
+                   text-xs font-bold px-3 py-2 rounded-xl shadow transition-all">
+            ▶▶ Watch All Issues
+          </button>
+          {% endif %}
+        </div>
         <p class="text-gray-400 text-xs mb-4">
-          Click <strong>Watch This</strong> on any card — the viewer above will zoom into that exact spot in slow motion.
+          Click <strong>Watch This</strong> on any card — or <strong>Watch All Issues</strong> to step through every problem in one go.
         </p>
         <div class="space-y-5">
           {% for cp in result.top_issues %}

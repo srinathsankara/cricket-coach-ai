@@ -28,6 +28,11 @@ let trailPositions       = [];
 const TRAIL_MAX          = 18;
 let autoPaused           = false;
 
+// Watch-All state
+let watchAllActive  = false;
+let watchAllOrder   = [];   // TOP_ISSUES indices sorted by issue_start_sec
+let watchAllCurrent = 0;    // pointer into watchAllOrder
+
 // Pulse state for the tracking dot
 let pulse = { r: 18, growing: true };
 
@@ -81,7 +86,11 @@ video.addEventListener('loadedmetadata', () => {
 });
 
 video.addEventListener('ended', () => {
-  if (loopEnabled) { video.currentTime = 0; video.play(); }
+  if (loopEnabled) {
+    autoPaused = false;          // reset so the pause fires again on next loop
+    video.currentTime = 0;
+    video.play();
+  }
 });
 
 video.addEventListener('play', () => {
@@ -98,24 +107,15 @@ function resizeCanvas() {
 
 // ── Frame sync: update live joint positions + auto-pause logic ────────────
 video.addEventListener('timeupdate', () => {
-  if (activeIssueIdx < 0 || !FRAME_LANDMARKS || !FRAME_LANDMARKS.length) return;
-
-  // Find nearest landmark frame
   const t = video.currentTime;
-  let best = FRAME_LANDMARKS[0], bestDiff = Math.abs(best.t - t);
-  for (let i = 1; i < FRAME_LANDMARKS.length; i++) {
-    const d = Math.abs(FRAME_LANDMARKS[i].t - t);
-    if (d < bestDiff) { bestDiff = d; best = FRAME_LANDMARKS[i]; }
-  }
-  activeJointPositions = best ? (best.j || {}) : {};
 
   // ── Auto-pause at issue moment ────────────────────────────────────────
-  // Guarantee the video plays for at least 1 s before pausing so the user
-  // always sees action. If issue_start_sec is 0 (defaulted), we wait 1 s.
-  if (!autoPaused && !video.paused) {
-    const issue      = TOP_ISSUES[activeIssueIdx];
-    const rawSec     = issue?.issue_start_sec ?? 0;
-    const issueSec   = Math.max(rawSec, 1.0);   // never pause before 1 s
+  // This block runs regardless of whether landmarks are available so the
+  // pause always fires even when pose detection had low confidence.
+  if (activeIssueIdx >= 0 && !autoPaused && !video.paused) {
+    const issue    = TOP_ISSUES[activeIssueIdx];
+    const rawSec   = issue?.issue_start_sec ?? 0;
+    const issueSec = Math.max(rawSec, 1.0);   // always play at least 1 s first
     if (t >= issueSec) {
       autoPaused = true;
       video.pause();
@@ -123,10 +123,22 @@ video.addEventListener('timeupdate', () => {
       const tipEl = document.getElementById('continue-tip');
       if (tipEl) tipEl.textContent = `⏸ ${issue.name} — this is the exact moment it goes wrong`;
 
+      // In watch-all mode show "Next Issue →", otherwise "Continue in slow-mo"
+      _updateContinueButton();
       document.getElementById('play-from-here').classList.remove('hidden');
       showCallout(issue.name, issue.how_to_fix || issue.message);
     }
   }
+
+  // ── Landmark sync — needs FRAME_LANDMARKS ────────────────────────────
+  if (activeIssueIdx < 0 || !FRAME_LANDMARKS || !FRAME_LANDMARKS.length) return;
+
+  let best = FRAME_LANDMARKS[0], bestDiff = Math.abs(best.t - t);
+  for (let i = 1; i < FRAME_LANDMARKS.length; i++) {
+    const d = Math.abs(FRAME_LANDMARKS[i].t - t);
+    if (d < bestDiff) { bestDiff = d; best = FRAME_LANDMARKS[i]; }
+  }
+  activeJointPositions = best ? (best.j || {}) : {};
 
   // Accumulate trail only while playing and past issue start
   if (!video.paused) {
@@ -148,9 +160,16 @@ video.addEventListener('timeupdate', () => {
 });
 
 // ── PUBLIC: called by "Watch This" buttons ────────────────────────────────
-function watchIssue(idx) {
+function watchIssue(idx, fromWatchAll = false) {
   const issue = TOP_ISSUES[idx];
   if (!issue) return;
+
+  // If called from a card button directly, cancel any watch-all flow
+  if (!fromWatchAll) {
+    watchAllActive  = false;
+    watchAllOrder   = [];
+    watchAllCurrent = 0;
+  }
 
   activeIssueIdx = idx;
   autoPaused     = false;
@@ -182,11 +201,62 @@ function watchIssue(idx) {
   document.getElementById('viewer-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── "▶ Continue in slow-mo" button handler ────────────────────────────────
+// ── "▶ Continue / Next Issue" button handler ─────────────────────────────
 function playFromIssue() {
   trailPositions = [];
-  setSpeed(0.25);
-  video.play();
+  document.getElementById('play-from-here').classList.add('hidden');
+  hideCallout();
+
+  if (watchAllActive) {
+    _advanceWatchAll();
+  } else {
+    setSpeed(0.25);
+    video.play();
+  }
+}
+
+// ── Watch-All: play through every issue in video order ────────────────────
+function watchAll() {
+  if (!TOP_ISSUES || !TOP_ISSUES.length) return;
+
+  // Sort issue indices by issue_start_sec (chronological order)
+  watchAllOrder = TOP_ISSUES
+    .map((issue, idx) => ({ idx, sec: issue.issue_start_sec ?? 0 }))
+    .sort((a, b) => a.sec - b.sec)
+    .map(item => item.idx);
+
+  watchAllActive  = true;
+  watchAllCurrent = 0;
+  watchIssue(watchAllOrder[0], true);
+}
+
+function _advanceWatchAll() {
+  watchAllCurrent++;
+  if (watchAllCurrent >= watchAllOrder.length) {
+    // All done — reset watch-all state and let video play free
+    watchAllActive = false;
+    watchAllOrder  = [];
+    const tipEl = document.getElementById('continue-tip');
+    if (tipEl) tipEl.textContent = '✅ All issues reviewed! Great work.';
+    setSpeed(0.25);
+    video.play();
+    return;
+  }
+  watchIssue(watchAllOrder[watchAllCurrent], true);
+}
+
+// Update the continue button label based on current mode
+function _updateContinueButton() {
+  const btn = document.getElementById('continue-btn');
+  if (!btn) return;
+  if (watchAllActive) {
+    const remaining = watchAllOrder.length - watchAllCurrent - 1;
+    btn.textContent = remaining > 0
+      ? `▶ Next Issue (${watchAllCurrent + 1}/${watchAllOrder.length})`
+      : '▶ Finish Review';
+  } else {
+    btn.textContent = '▶ Continue in slow-mo';
+  }
 }
 
 // ── Main rAF draw loop ────────────────────────────────────────────────────
