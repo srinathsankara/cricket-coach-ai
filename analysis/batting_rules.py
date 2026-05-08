@@ -2,6 +2,81 @@ import numpy as np
 from .pose_detector import calculate_angle, landmark_xy, landmark_visible
 
 
+def detect_shot_type(frames, handedness='right'):
+    """
+    Classify the batting shot from wrist trajectory and body angles.
+    Returns one of: 'drive', 'pull_hook', 'cut', 'sweep', 'defensive', 'unknown'
+    Used to label the result and optionally adjust per-shot thresholds.
+    """
+    top_wrist   = 'left_wrist'  if handedness == 'right' else 'right_wrist'
+    front_knee  = 'left_knee'   if handedness == 'right' else 'right_knee'
+    front_hip   = 'left_hip'    if handedness == 'right' else 'right_hip'
+    front_ankle = 'left_ankle'  if handedness == 'right' else 'right_ankle'
+
+    wrist_positions = []
+    knee_angles     = []
+
+    for fd in frames:
+        lm = fd['landmarks']
+        if lm is None:
+            continue
+        w, h = fd['w'], fd['h']
+        try:
+            wx, wy = landmark_xy(lm, top_wrist, w, h)
+            wrist_positions.append((wx / w, wy / h))
+        except Exception:
+            pass
+        try:
+            fh = landmark_xy(lm, front_hip,   w, h)
+            fk = landmark_xy(lm, front_knee,  w, h)
+            fa = landmark_xy(lm, front_ankle, w, h)
+            knee_angles.append(calculate_angle(fh, fk, fa))
+        except Exception:
+            pass
+
+    if len(wrist_positions) < 5:
+        return 'unknown'
+
+    # Peak = highest wrist (smallest y)
+    peak_y   = min(pos[1] for pos in wrist_positions)
+    # Lowest point wrist reaches
+    bottom_y = max(pos[1] for pos in wrist_positions)
+    # Horizontal spread during the whole swing
+    x_vals   = [pos[0] for pos in wrist_positions]
+    x_range  = max(x_vals) - min(x_vals)
+    # Vertical travel
+    vertical_drop = bottom_y - peak_y
+    # Average front knee angle
+    avg_knee = float(np.mean(knee_angles)) if knee_angles else 160.0
+
+    # Sweep: very bent front knee + wrist stays low
+    if avg_knee < 130 and bottom_y > 0.65:
+        return 'sweep'
+    # Pull / Hook: bat finishes high AND swings horizontally
+    if x_range > 0.20 and bottom_y < 0.55:
+        return 'pull_hook'
+    # Cut: significant horizontal movement at mid-height
+    if x_range > 0.15 and 0.35 < bottom_y < 0.65:
+        return 'cut'
+    # Defensive: little movement in both axes
+    if vertical_drop < 0.15 and x_range < 0.10:
+        return 'defensive'
+    # Default: drive family
+    return 'drive'
+
+
+# Shot type → human label + emoji
+SHOT_LABELS = {
+    'drive':     ('Drive',          '🏏'),
+    'pull_hook': ('Pull / Hook',    '💪'),
+    'cut':       ('Cut Shot',       '✂️'),
+    'sweep':     ('Sweep',          '🧹'),
+    'defensive': ('Defensive Block','🛡️'),
+    'unknown':   ('Unknown Shot',   '❓'),
+    'bowling':   ('Bowling',        '🎳'),
+}
+
+
 def analyze_batting(frame_data, handedness='right'):
     if not frame_data:
         return []

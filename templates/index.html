@@ -23,10 +23,14 @@
   <header class="bg-green-900 text-white py-4 px-6 shadow-lg">
     <div class="max-w-4xl mx-auto flex items-center gap-3">
       <span class="text-4xl">🏏</span>
-      <div>
+      <div class="flex-1">
         <h1 class="text-2xl font-extrabold tracking-tight">Cricket Coach AI</h1>
         <p class="text-green-300 text-sm">Upload a video — get expert batting &amp; bowling feedback instantly</p>
       </div>
+      <a href="/history" class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white
+                                font-bold px-4 py-2 rounded-xl text-sm transition-all">
+        📚 History
+      </a>
     </div>
   </header>
 
@@ -141,6 +145,23 @@
             <option value="under14">Under 14 👦</option>
             <option value="teen">Teen &amp; Adult 🏃</option>
           </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            Analysis quality
+            <span class="ml-1 text-xs font-normal text-gray-400">(Precise is slower but more accurate)</span>
+          </label>
+          <div class="flex gap-2">
+            <button id="btn-quality-lite" onclick="selectQuality('lite')"
+              class="toggle-btn active-toggle flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              ⚡ Standard
+            </button>
+            <button id="btn-quality-full" onclick="selectQuality('full')"
+              class="toggle-btn flex-1 py-3 px-2 rounded-xl border-2 font-bold text-sm">
+              🎯 Precise
+            </button>
+          </div>
         </div>
       </div>
 

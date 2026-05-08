@@ -139,3 +139,14 @@
 
 /* bg-gray-850 helper (between 800 and 900) */
 .bg-gray-850 { background-color: #1f2937; }
+
+/* ── Annotation colour picker sizing ────────────────────────── */
+#anno-color {
+  width:  28px;
+  height: 28px;
+  padding: 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid #4b5563;
+  background: none;
+}

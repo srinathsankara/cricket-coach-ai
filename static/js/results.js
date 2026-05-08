@@ -36,6 +36,14 @@ let watchAllCurrent = 0;    // pointer into watchAllOrder
 // Pulse state for the tracking dot
 let pulse = { r: 18, growing: true };
 
+// ── Annotation state ──────────────────────────────────────────────────────
+let annotationMode   = false;
+let annoTool         = 'pencil';    // 'pencil' | 'arrow' | 'circle'
+let annoColor        = '#ff4444';
+let annotationStrokes = [];         // [{tool, color, points:[{x,y}]}]
+let currentStroke    = null;        // stroke being drawn
+let isDrawing        = false;
+
 // ── Skeleton connections (mirrors Python's DRAW_CONNECTIONS) ─────────────
 const SKELETON_CONNECTIONS = [
   ['left_shoulder',  'right_shoulder'],
@@ -300,6 +308,9 @@ function drawLoop() {
     // 4. Phase bar always visible at bottom
     _drawPhaseBar(cw, ch);
   }
+
+  // 5. Annotation strokes always on top of everything
+  _drawAnnotations();
 }
 
 // ── Tracking dot — shown throughout the whole video ───────────────────────
@@ -411,6 +422,9 @@ function _drawFrozen(issue, cw, ch) {
 
   // 4. Phase bar at bottom
   _drawPhaseBar(cw, ch);
+
+  // 5. Annotation strokes on top
+  _drawAnnotations();
 }
 
 // ── Skeleton on canvas — highlights issue limbs in orange, rest in green ──
@@ -774,3 +788,181 @@ function _roundRect(ctx, x, y, w, h, r) {
 }
 
 function roundRect(c, x, y, w, h, r) { _roundRect(c, x, y, w, h, r); }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  ANNOTATION TOOLS
+// ══════════════════════════════════════════════════════════════════════════
+
+function toggleAnnotation() {
+  annotationMode = !annotationMode;
+  canvas.style.pointerEvents = annotationMode ? 'auto' : 'none';
+  canvas.style.cursor        = annotationMode ? 'crosshair' : 'default';
+
+  const btn = document.getElementById('anno-btn');
+  if (btn) btn.classList.toggle('vbtn-active', annotationMode);
+
+  // Show / hide sub-tools
+  document.querySelectorAll('.anno-sub, #tool-pencil, #tool-arrow, #tool-circle')
+    .forEach(el => el.classList.toggle('hidden', !annotationMode));
+
+  if (annotationMode) {
+    setAnnoTool('pencil');
+    _bindAnnotationEvents();
+  } else {
+    _unbindAnnotationEvents();
+  }
+}
+
+function setAnnoTool(t) {
+  annoTool = t;
+  ['pencil','arrow','circle'].forEach(n => {
+    const el = document.getElementById(`tool-${n}`);
+    if (el) el.classList.toggle('vbtn-active', n === t);
+  });
+}
+
+function undoAnnotation() {
+  annotationStrokes.pop();
+}
+
+function clearAnnotations() {
+  annotationStrokes = [];
+  currentStroke     = null;
+}
+
+// ── Mouse handlers ────────────────────────────────────────────────────────
+function _annoMouseDown(e) {
+  if (!annotationMode) return;
+  annoColor    = document.getElementById('anno-color')?.value || '#ff4444';
+  isDrawing    = true;
+  const {x, y} = _canvasPt(e);
+  currentStroke = { tool: annoTool, color: annoColor, points: [{x, y}] };
+}
+
+function _annoMouseMove(e) {
+  if (!annotationMode || !isDrawing || !currentStroke) return;
+  const {x, y} = _canvasPt(e);
+  if (annoTool === 'pencil') {
+    currentStroke.points.push({x, y});
+  } else {
+    // For arrow/circle keep only start + current endpoint
+    currentStroke.points = [currentStroke.points[0], {x, y}];
+  }
+}
+
+function _annoMouseUp(e) {
+  if (!annotationMode || !currentStroke) return;
+  isDrawing = false;
+  if (currentStroke.points.length > 1) {
+    annotationStrokes.push(currentStroke);
+  }
+  currentStroke = null;
+}
+
+function _canvasPt(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (canvas.width  / rect.width),
+    y: (e.clientY - rect.top)  * (canvas.height / rect.height),
+  };
+}
+
+let _annoBound = false;
+function _bindAnnotationEvents() {
+  if (_annoBound) return;
+  _annoBound = true;
+  canvas.addEventListener('mousedown',  _annoMouseDown);
+  canvas.addEventListener('mousemove',  _annoMouseMove);
+  canvas.addEventListener('mouseup',    _annoMouseUp);
+  canvas.addEventListener('mouseleave', _annoMouseUp);
+}
+function _unbindAnnotationEvents() {
+  canvas.removeEventListener('mousedown',  _annoMouseDown);
+  canvas.removeEventListener('mousemove',  _annoMouseMove);
+  canvas.removeEventListener('mouseup',    _annoMouseUp);
+  canvas.removeEventListener('mouseleave', _annoMouseUp);
+  _annoBound = false;
+}
+
+// ── Draw all stored strokes + active stroke ────────────────────────────────
+function _drawAnnotations() {
+  const all = currentStroke
+    ? [...annotationStrokes, currentStroke]
+    : annotationStrokes;
+
+  for (const stroke of all) {
+    if (!stroke.points.length) continue;
+    ctx.save();
+    ctx.strokeStyle = stroke.color;
+    ctx.fillStyle   = stroke.color;
+    ctx.lineWidth   = 3;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+
+    if (stroke.tool === 'pencil') {
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      ctx.stroke();
+
+    } else if (stroke.tool === 'arrow' && stroke.points.length >= 2) {
+      const s = stroke.points[0];
+      const e = stroke.points[stroke.points.length - 1];
+      const angle = Math.atan2(e.y - s.y, e.x - s.x);
+      const hw    = 14;   // arrowhead width
+      // Shaft
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(e.x, e.y);
+      ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.x - hw * Math.cos(angle - Math.PI / 6), e.y - hw * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(e.x - hw * Math.cos(angle + Math.PI / 6), e.y - hw * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+
+    } else if (stroke.tool === 'circle' && stroke.points.length >= 2) {
+      const s = stroke.points[0];
+      const e = stroke.points[stroke.points.length - 1];
+      const r = Math.hypot(e.x - s.x, e.y - s.y);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  EXPORT CURRENT FRAME
+// ══════════════════════════════════════════════════════════════════════════
+
+function exportFrame() {
+  // Composite: video frame + analysis canvas
+  const offscreen = document.createElement('canvas');
+  offscreen.width  = canvas.width  || video.videoWidth  || 1280;
+  offscreen.height = canvas.height || video.videoHeight || 720;
+  const oc = offscreen.getContext('2d');
+
+  // Draw the video frame
+  try { oc.drawImage(video, 0, 0, offscreen.width, offscreen.height); }
+  catch (e) { /* cross-origin or not ready — skip */ }
+
+  // Draw the analysis overlay on top
+  oc.drawImage(canvas, 0, 0, offscreen.width, offscreen.height);
+
+  offscreen.toBlob(blob => {
+    if (!blob) { alert('Export failed — try pausing the video first.'); return; }
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href     = url;
+    link.download = `cricket-coach-frame-${Date.now()}.png`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }, 'image/png');
+}

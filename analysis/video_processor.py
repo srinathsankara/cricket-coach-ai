@@ -3,14 +3,15 @@ import cv2
 import numpy as np
 from .pose_detector import (LANDMARKS, create_image_landmarker,
                              detect_landmarks, draw_skeleton_neutral)
-from .batting_rules import analyze_batting
+from .batting_rules import analyze_batting, detect_shot_type
 from .bowling_rules import analyze_bowling
 
 SAMPLE_EVERY = 3   # analyse 1-in-N frames for speed
 
 
 def process_video(video_path, mode='batting', handedness='right',
-                  age_group='under10', trim_start=0.0, trim_end=0.0,
+                  age_group='under10', model_path='pose_landmarker_lite.task',
+                  trim_start=0.0, trim_end=0.0,
                   progress_callback=None):
 
     cap = cv2.VideoCapture(video_path)
@@ -36,7 +37,7 @@ def process_video(video_path, mode='batting', handedness='right',
     cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     frame_data      = []
     frame_landmarks = []   # [{t: float, j: {name: [x, y]}}] for canvas sync
-    landmarker      = create_image_landmarker()
+    landmarker      = create_image_landmarker(model_path)
 
     rel_idx = 0   # frame index relative to trim start
     while True:
@@ -70,6 +71,9 @@ def process_video(video_path, mode='batting', handedness='right',
     cap.release()
     landmarker.close()
 
+    # ── Temporal smoothing of frame_landmarks ────────────────────────────
+    frame_landmarks = _smooth_frame_landmarks(frame_landmarks, window=5)
+
     if progress_callback:
         progress_callback(58)
 
@@ -77,6 +81,10 @@ def process_video(video_path, mode='batting', handedness='right',
     checkpoints = (analyze_batting(frame_data, handedness)
                    if mode == 'batting'
                    else analyze_bowling(frame_data, handedness))
+
+    # ── Shot / delivery type classification ──────────────────────────────
+    shot_type = (detect_shot_type(frame_data, handedness)
+                 if mode == 'batting' else 'bowling')
 
     # ── Compute issue_start_sec: when does the issue first appear? ────────
     for cp in checkpoints:
@@ -120,6 +128,7 @@ def process_video(video_path, mode='batting', handedness='right',
         'mode': mode,
         'handedness': handedness,
         'age_group': age_group,
+        'shot_type': shot_type,
         'checkpoints': checkpoints,
         'top_issues': top_issues,
         'top_good': top_good,
@@ -194,3 +203,41 @@ def _nearest_landmarks(lm_map, sorted_keys, target_idx):
         return None
     closest = min(sorted_keys, key=lambda k: abs(k - target_idx))
     return lm_map[closest] if abs(closest - target_idx) <= SAMPLE_EVERY + 1 else None
+
+
+def _smooth_frame_landmarks(frame_landmarks, window=5):
+    """
+    Apply a temporal box-filter to joint positions to remove MediaPipe jitter.
+    Each frame's joint position is replaced by the average of the surrounding
+    `window` frames — making the skeleton visibly smoother during playback.
+    """
+    n = len(frame_landmarks)
+    if n < 3:
+        return frame_landmarks
+
+    half = window // 2
+    out  = []
+
+    for i, fl in enumerate(frame_landmarks):
+        start  = max(0, i - half)
+        end    = min(n, i + half + 1)
+        bucket = frame_landmarks[start:end]
+
+        # Collect all joint names visible in this window
+        all_names = set()
+        for bf in bucket:
+            all_names.update(bf['j'].keys())
+
+        joints = {}
+        for jname in all_names:
+            xs = [bf['j'][jname][0] for bf in bucket if jname in bf['j']]
+            ys = [bf['j'][jname][1] for bf in bucket if jname in bf['j']]
+            if xs:
+                joints[jname] = [
+                    round(sum(xs) / len(xs), 4),
+                    round(sum(ys) / len(ys), 4),
+                ]
+
+        out.append({'t': fl['t'], 'j': joints})
+
+    return out

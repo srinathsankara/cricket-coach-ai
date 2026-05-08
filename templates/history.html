@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket Coach AI — Session History</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-amber-50 min-h-screen font-sans">
+
+<header class="bg-green-900 text-white py-4 px-6 shadow-lg">
+  <div class="max-w-5xl mx-auto flex items-center gap-3">
+    <span class="text-4xl">🏏</span>
+    <div class="flex-1">
+      <h1 class="text-2xl font-extrabold tracking-tight">Cricket Coach AI</h1>
+      <p class="text-green-300 text-sm">Session History</p>
+    </div>
+    <a href="/" class="bg-white text-green-900 font-bold px-4 py-2 rounded-xl text-sm
+                        hover:bg-green-50 transition-all">+ New Video</a>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-green-900">📚 Past Analyses</h2>
+    <p class="text-sm text-gray-400">{{ sessions | length }} session{{ 's' if sessions | length != 1 else '' }}</p>
+  </div>
+
+  {% if not sessions %}
+  <div class="bg-white rounded-2xl shadow p-12 text-center">
+    <p class="text-5xl mb-4">📭</p>
+    <p class="text-xl font-bold text-gray-600 mb-2">No sessions yet</p>
+    <p class="text-gray-400 mb-6">Upload your first cricket video to get started.</p>
+    <a href="/" class="bg-green-800 text-white font-bold px-6 py-3 rounded-xl hover:bg-green-700 transition-all">
+      🎬 Analyse a Video
+    </a>
+  </div>
+  {% else %}
+
+  <div class="space-y-4">
+    {% for s in sessions %}
+    {% set pct = (s.good_count / s.total_count * 100) | int if s.total_count > 0 else 0 %}
+    <div class="bg-white rounded-2xl shadow hover:shadow-md transition-shadow overflow-hidden flex">
+
+      <!-- Video thumbnail -->
+      <div class="shrink-0 w-36 bg-black flex items-center justify-center relative">
+        {% if s.video_filename %}
+        <video class="w-full h-full object-cover"
+          src="/results/video/{{ s.video_filename }}"
+          preload="metadata"
+          style="max-height:90px;"
+          muted></video>
+        {% else %}
+        <span class="text-4xl">🎬</span>
+        {% endif %}
+        <!-- Mode badge -->
+        <span class="absolute top-1 left-1 text-xs font-bold px-2 py-0.5 rounded-full
+          {% if s.mode == 'batting' %}bg-green-600{% else %}bg-blue-600{% endif %} text-white">
+          {{ '🏏' if s.mode == 'batting' else '🎳' }} {{ s.mode | capitalize }}
+        </span>
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 px-5 py-4 flex flex-col gap-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <p class="font-bold text-gray-800">
+            {{ s.created_at }}
+          </p>
+          <span class="text-xs text-gray-400">•</span>
+          <span class="text-xs text-gray-500">
+            {{ 'Right' if s.handedness == 'right' else 'Left' }}-handed
+          </span>
+          <span class="text-xs text-gray-400">•</span>
+          <span class="text-xs text-gray-500">{{ s.clip_duration }}s</span>
+          {% if s.shot_type and s.shot_type not in ('unknown', 'bowling') %}
+          <span class="text-xs text-gray-400">•</span>
+          <span class="text-xs font-semibold text-green-700">{{ s.shot_type | replace('_', ' ') | title }}</span>
+          {% endif %}
+        </div>
+
+        <!-- Score bar -->
+        <div class="flex items-center gap-3 mt-1">
+          <div class="flex-1 bg-gray-100 rounded-full h-2">
+            <div class="h-2 rounded-full
+              {% if pct >= 60 %}bg-green-500{% elif pct >= 30 %}bg-yellow-400{% else %}bg-orange-400{% endif %}"
+              style="width:{{ pct }}%"></div>
+          </div>
+          <span class="text-xs font-bold text-gray-600 shrink-0">
+            {{ s.good_count }}/{{ s.total_count }} checks
+          </span>
+          <span class="text-xs shrink-0
+            {% if s.confidence >= 80 %}text-green-600{% elif s.confidence >= 50 %}text-yellow-600{% else %}text-red-500{% endif %}">
+            {{ s.confidence }}% confidence
+          </span>
+        </div>
+
+        <!-- Age group + age -->
+        <p class="text-xs text-gray-400">
+          {{ {'under10':'Under 10','under15':'Under 15','under18':'Under 18','adult':'Adult'}.get(s.age_group, s.age_group) }}
+        </p>
+      </div>
+
+      <!-- View button -->
+      <div class="shrink-0 flex items-center px-4">
+        <a href="/results/{{ s.job_id }}"
+          class="bg-green-800 hover:bg-green-700 text-white font-bold text-sm
+                 px-4 py-2 rounded-xl transition-all">
+          View →
+        </a>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</main>
+
+<footer class="py-6 mt-8 border-t border-gray-200 bg-white text-center text-xs text-gray-400">
+  Cricket Coach AI &bull; All processing runs locally &bull; Your videos stay private
+</footer>
+
+</body>
+</html>

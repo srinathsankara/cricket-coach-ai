@@ -21,6 +21,8 @@
         {% if result.clip_duration %}&bull; {{ result.clip_duration }}s clip{% endif %}
       </p>
     </div>
+    <a href="/history" class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white font-bold
+                               px-3 py-2 rounded-xl text-sm transition-all">📚 History</a>
     <a href="/" class="bg-white text-green-900 font-bold px-4 py-2 rounded-xl text-sm
                         hover:bg-green-50 transition-all">← New Video</a>
   </div>
@@ -54,6 +56,20 @@
         {% endif %}
       </h2>
       <p class="text-gray-500 mt-1">We checked <strong>{{ total }}</strong> things in your technique.</p>
+      <div class="flex flex-wrap gap-2 mt-2">
+        {% if result.shot_type and result.shot_type not in ('unknown', 'bowling') %}
+        {% set shot_map = {'drive': ('Drive','🏏'), 'pull_hook': ('Pull / Hook','💪'), 'cut': ('Cut Shot','✂️'), 'sweep': ('Sweep','🧹'), 'defensive': ('Defensive','🛡️')} %}
+        {% set sl = shot_map.get(result.shot_type, ('Shot','🏏')) %}
+        <span class="inline-flex items-center gap-1 bg-green-100 text-green-800 font-bold text-xs px-3 py-1 rounded-full">
+          {{ sl[1] }} Shot detected: {{ sl[0] }}
+        </span>
+        {% endif %}
+        {% if result.checkpoints | selectattr('ai_enhanced', 'defined') | list | length > 0 %}
+        <span class="inline-flex items-center gap-1 bg-purple-100 text-purple-800 font-bold text-xs px-3 py-1 rounded-full">
+          🤖 AI-personalised coaching
+        </span>
+        {% endif %}
+      </div>
     </div>
     <div class="text-center shrink-0">
       <div class="w-20 h-20 rounded-full flex items-center justify-center text-white font-extrabold text-2xl
@@ -172,6 +188,26 @@
           <span class="viewer-label">LOOP</span>
           <button id="loop-btn" onclick="toggleLoop()" class="vbtn vbtn-active">↺ ON</button>
         </div>
+
+        <div class="w-px h-5 bg-gray-600"></div>
+
+        <!-- Annotation tools -->
+        <div class="flex items-center gap-1">
+          <span class="viewer-label">ANNOTATE</span>
+          <button id="anno-btn" onclick="toggleAnnotation()" class="vbtn">✏️ Draw</button>
+          <button onclick="setAnnoTool('pencil')"  id="tool-pencil" class="vbtn hidden">✏️</button>
+          <button onclick="setAnnoTool('arrow')"   id="tool-arrow"  class="vbtn hidden">➡️</button>
+          <button onclick="setAnnoTool('circle')"  id="tool-circle" class="vbtn hidden">⭕</button>
+          <button onclick="undoAnnotation()"                         class="vbtn hidden anno-sub">↩</button>
+          <button onclick="clearAnnotations()"                       class="vbtn hidden anno-sub">🗑️</button>
+          <input  id="anno-color" type="color" value="#ff4444"
+                  class="hidden anno-sub w-7 h-7 rounded cursor-pointer border-0 bg-transparent" />
+        </div>
+
+        <div class="w-px h-5 bg-gray-600"></div>
+
+        <!-- Export -->
+        <button onclick="exportFrame()" class="vbtn">📸 Export</button>
 
         <!-- Hint text -->
         <p class="ml-auto text-gray-400 text-xs hidden sm:block">

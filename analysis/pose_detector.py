@@ -59,10 +59,10 @@ def landmark_visible(lm_list, name, threshold=0.4):
     return getattr(lm, 'visibility', 1.0) >= threshold
 
 
-def create_image_landmarker():
+def create_image_landmarker(model_path=MODEL_PATH):
     """Return a PoseLandmarker configured for single-image (frame) detection."""
     options = mp_vision.PoseLandmarkerOptions(
-        base_options=mp_python.BaseOptions(model_asset_path=MODEL_PATH),
+        base_options=mp_python.BaseOptions(model_asset_path=model_path),
         running_mode=mp_vision.RunningMode.IMAGE,
         num_poses=1,
         min_pose_detection_confidence=0.45,

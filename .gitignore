@@ -37,3 +37,4 @@ Thumbs.db
 
 # Claude session data
 .claude/
+sessions.db

@@ -1,8 +1,9 @@
 /* Cricket Coach AI — upload page logic */
 
-let selectedMode = 'batting';
-let selectedHand = 'right';
-let selectedFile = null;
+let selectedMode    = 'batting';
+let selectedHand    = 'right';
+let selectedQuality = 'lite';
+let selectedFile    = null;
 let videoDuration = 0;   // seconds
 let trimStart = 0;       // seconds
 let trimEnd   = 0;       // seconds
@@ -19,6 +20,12 @@ function selectHand(hand) {
   selectedHand = hand;
   applyToggle('btn-right', hand === 'right');
   applyToggle('btn-left',  hand === 'left');
+}
+
+function selectQuality(q) {
+  selectedQuality = q;
+  applyToggle('btn-quality-lite', q === 'lite');
+  applyToggle('btn-quality-full', q === 'full');
 }
 
 function applyToggle(id, active) {
@@ -210,6 +217,7 @@ async function startAnalysis() {
   form.append('mode',        selectedMode);
   form.append('handedness',  selectedHand);
   form.append('age_group',   document.getElementById('age-group').value);
+  form.append('quality',     selectedQuality);
   form.append('trim_start',  trimStart.toFixed(3));
   form.append('trim_end',    trimEnd.toFixed(3));
 
